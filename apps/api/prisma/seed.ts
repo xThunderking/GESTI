@@ -11,10 +11,9 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   const roles: Array<{ name: RoleName; description: string }> = [
     { name: 'ADMIN', description: 'Administracion completa del sistema.' },
-    { name: 'IT_MANAGER', description: 'Gestion operativa del departamento de TI.' },
-    { name: 'TECHNICIAN', description: 'Atencion y seguimiento de tickets.' },
-    { name: 'REQUESTER', description: 'Usuario solicitante de soporte.' },
-    { name: 'AUDITOR', description: 'Consulta de bitacora y reportes.' },
+    { name: 'SUPERVISOR', description: 'Supervision de la operacion del sistema.' },
+    { name: 'TI', description: 'Personal del departamento de TI.' },
+    { name: 'USUARIO', description: 'Usuario general del sistema.' },
   ];
 
   await Promise.all(
@@ -31,16 +30,6 @@ async function main() {
     ),
   );
 
-  const department = await prisma.department.upsert({
-    create: {
-      name: 'Tecnologias de la Informacion',
-    },
-    update: {},
-    where: {
-      name: 'Tecnologias de la Informacion',
-    },
-  });
-
   const adminRole = await prisma.role.findUniqueOrThrow({
     where: {
       name: 'ADMIN',
@@ -49,14 +38,11 @@ async function main() {
 
   const admin = await prisma.user.upsert({
     create: {
-      departmentId: department.id,
       email: 'admin@gesti.local',
       name: 'Administrador GESTI',
       passwordHash: await argon2.hash('Admin123!'),
     },
-    update: {
-      departmentId: department.id,
-    },
+    update: {},
     where: {
       email: 'admin@gesti.local',
     },

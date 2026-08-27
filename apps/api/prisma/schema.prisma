@@ -10,46 +10,9 @@ datasource db {
 
 enum RoleName {
   ADMIN
-  IT_MANAGER
-  TECHNICIAN
-  REQUESTER
-  AUDITOR
-}
-
-enum TicketPriority {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
-}
-
-enum TicketStatus {
-  OPEN
-  IN_PROGRESS
-  WAITING_USER
-  RESOLVED
-  CLOSED
-}
-
-enum AssetStatus {
-  STOCK
-  ASSIGNED
-  REPAIR
-  RETIRED
-}
-
-model Department {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @unique
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  assets  Asset[]
-  tickets Ticket[]
-  users   User[]
-
-  @@map("departments")
+  SUPERVISOR
+  TI
+  USUARIO
 }
 
 model Role {
@@ -73,15 +36,8 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  departmentId String?     @db.Uuid
-  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-
-  assignedAssets  Asset[]     @relation("AssetAssignee")
-  auditLogs       AuditLog[]
-  refreshTokens   RefreshToken[]
-  requestedTickets Ticket[]    @relation("TicketRequester")
-  assignedTickets  Ticket[]    @relation("TicketAssignee")
-  roles           UserRole[]
+  refreshTokens RefreshToken[]
+  roles         UserRole[]
 
   @@map("users")
 }
@@ -110,70 +66,4 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
-}
-
-model Asset {
-  id           String      @id @default(uuid()) @db.Uuid
-  assetTag     String      @unique
-  name         String
-  type         String
-  brand        String?
-  model        String?
-  serialNumber String?     @unique
-  status       AssetStatus @default(STOCK)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-
-  assignedToId String? @db.Uuid
-  departmentId String? @db.Uuid
-
-  assignedTo User?       @relation("AssetAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
-  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  tickets    Ticket[]
-
-  @@index([assetTag])
-  @@index([status])
-  @@map("assets")
-}
-
-model Ticket {
-  id          String         @id @default(uuid()) @db.Uuid
-  folio       String         @unique
-  title       String
-  description String
-  priority    TicketPriority @default(MEDIUM)
-  status      TicketStatus   @default(OPEN)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  resolvedAt  DateTime?
-
-  requesterId  String  @db.Uuid
-  assigneeId   String? @db.Uuid
-  assetId      String? @db.Uuid
-  departmentId String  @db.Uuid
-
-  asset      Asset?     @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  assignee   User?      @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
-  requester  User       @relation("TicketRequester", fields: [requesterId], references: [id], onDelete: Restrict)
-
-  @@index([status])
-  @@index([priority])
-  @@index([createdAt])
-  @@map("tickets")
-}
-
-model AuditLog {
-  id        String   @id @default(uuid()) @db.Uuid
-  action    String
-  entity    String
-  entityId  String
-  metadata  Json?
-  createdAt DateTime @default(now())
-
-  userId String? @db.Uuid
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  @@index([entity, entityId])
-  @@map("audit_logs")
 }
