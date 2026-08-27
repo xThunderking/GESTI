@@ -41,8 +41,11 @@ async function main() {
       email: 'admin@gesti.local',
       name: 'Administrador GESTI',
       passwordHash: await argon2.hash('Admin123!'),
+      mustChangePassword: false,
     },
-    update: {},
+    update: {
+      mustChangePassword: false,
+    },
     where: {
       email: 'admin@gesti.local',
     },

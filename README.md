@@ -75,3 +75,28 @@ Usuario administrador inicial:
 - Password: `Admin123!`
 
 Estas credenciales son solo para desarrollo local y deben cambiarse antes de publicar el sistema.
+
+## Seguridad de sesion
+
+- JWT de acceso con vigencia de 10 minutos.
+- Refresh token rotativo almacenado en una cookie `HttpOnly` y `SameSite=Strict`.
+- Sesiones registradas en PostgreSQL y vinculadas a un identificador exclusivo de la pestana.
+- Cierre de sesion despues de 2 horas sin actividad y caducidad absoluta a los 7 dias.
+- RBAC validado en NestJS para los roles `ADMIN`, `SUPERVISOR`, `TI` y `USUARIO`.
+- Gestion de usuarios permitida solo a `ADMIN` y `SUPERVISOR`.
+- El usuario `admin@gesti.local` no puede editarse ni eliminarse.
+- Limite de 5 intentos de login por minuto.
+- Las cuentas nuevas reciben una contrasena temporal por correo y deben reemplazarla al ingresar.
+- La contrasena personal requiere mas de 8 caracteres, una mayuscula, al menos 2 numeros y un simbolo.
+
+`JWT_ACCESS_SECRET` debe contener al menos 32 caracteres aleatorios. En produccion tambien se debe
+usar HTTPS para que la cookie se marque como `Secure`, cambiar la contrasena inicial y restringir
+`CORS_ORIGIN` al dominio definitivo.
+
+En desarrollo, los correos se capturan con Mailpit:
+
+- Bandeja local: http://localhost:8025
+- SMTP local: `localhost:1025`
+
+Para enviar correos reales se deben reemplazar `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`,
+`SMTP_FROM`, `SMTP_USER` y `SMTP_PASSWORD` en `apps/api/.env` con los datos del proveedor SMTP.
