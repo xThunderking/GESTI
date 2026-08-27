@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:18
+    container_name: gesti-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gesti
+      POSTGRES_PASSWORD: gesti_dev_password
+      POSTGRES_DB: gesti
+    ports:
+      - '5432:5432'
+    volumes:
+      - gesti-postgres-v18-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gesti -d gesti']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  gesti-postgres-v18-data:

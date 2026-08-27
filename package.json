@@ -1,0 +1,42 @@
+{
+  "name": "gesti",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sistema de gestion del departamento de TI.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
+  },
+  "scripts": {
+    "dev": "concurrently -n WEB,API -c cyan,green \"npm run dev -w @gesti/web\" \"npm run start:dev -w @gesti/api\"",
+    "dev:web": "npm run dev -w @gesti/web",
+    "dev:api": "npm run start:dev -w @gesti/api",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "postinstall": "npm run prisma:generate",
+    "prebuild": "npm run prisma:generate",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "prisma:generate": "npm run prisma:generate -w @gesti/api",
+    "prisma:migrate": "npm run prisma:migrate -w @gesti/api",
+    "prisma:seed": "npm run prisma:seed -w @gesti/api",
+    "prisma:studio": "npm run prisma:studio -w @gesti/api"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@eslint/js": "^9.39.2",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.2",
+    "globals": "^16.5.0",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.49.1"
+  }
+}
