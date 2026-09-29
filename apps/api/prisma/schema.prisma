@@ -57,12 +57,21 @@ model User {
   towerIpsCreated TowerIp[] @relation("TowerIpCreatedBy")
   towerIpsUpdated TowerIp[] @relation("TowerIpUpdatedBy")
   towerIpsDeleted TowerIp[] @relation("TowerIpDeletedBy")
+  haqIpsCreated HaqIp[] @relation("HaqIpCreatedBy")
+  haqIpsUpdated HaqIp[] @relation("HaqIpUpdatedBy")
+  haqIpsDeleted HaqIp[] @relation("HaqIpDeletedBy")
+  extensionsCreated Extension[] @relation("ExtensionCreatedBy")
+  extensionsUpdated Extension[] @relation("ExtensionUpdatedBy")
+  extensionsDeleted Extension[] @relation("ExtensionDeletedBy")
   emailRequestsCreated EmailRequest[] @relation("EmailRequestCreatedBy")
   emailRequestsUpdated EmailRequest[] @relation("EmailRequestUpdatedBy")
   emailRequestsDeleted EmailRequest[] @relation("EmailRequestDeletedBy")
   tonersCreated Toner[] @relation("TonerCreatedBy")
   tonersUpdated Toner[] @relation("TonerUpdatedBy")
   tonersDeleted Toner[] @relation("TonerDeletedBy")
+  computerEquipmentCreated ComputerEquipment[] @relation("ComputerEquipmentCreatedBy")
+  computerEquipmentUpdated ComputerEquipment[] @relation("ComputerEquipmentUpdatedBy")
+  computerEquipmentDeleted ComputerEquipment[] @relation("ComputerEquipmentDeletedBy")
 
   @@map("users")
 }
@@ -123,6 +132,50 @@ model TowerIp {
   @@index([office])
   @@index([deletedAt])
   @@map("tower_ips")
+}
+
+model HaqIp {
+  id           String   @id @default(uuid()) @db.Uuid
+  ip           String   @unique
+  area         String
+  responsible  String
+  username     String
+  observations String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  deletedAt    DateTime?
+
+  createdById String  @db.Uuid
+  updatedById String  @db.Uuid
+  deletedById String? @db.Uuid
+  createdBy   User    @relation("HaqIpCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User    @relation("HaqIpUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy   User?   @relation("HaqIpDeletedBy", fields: [deletedById], references: [id])
+
+  @@index([area])
+  @@index([deletedAt])
+  @@map("haq_ips")
+}
+
+model Extension {
+  id          String   @id @default(uuid()) @db.Uuid
+  extension   String   @unique
+  description String
+  area        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  createdById String  @db.Uuid
+  updatedById String  @db.Uuid
+  deletedById String? @db.Uuid
+  createdBy   User    @relation("ExtensionCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User    @relation("ExtensionUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy   User?   @relation("ExtensionDeletedBy", fields: [deletedById], references: [id])
+
+  @@index([area])
+  @@index([deletedAt])
+  @@map("extensions")
 }
 
 model Areas {
@@ -190,6 +243,34 @@ model Toner {
   @@index([printerId])
   @@index([deletedAt])
   @@map("toners")
+}
+
+model ComputerEquipment {
+  id               String   @id @default(uuid()) @db.Uuid
+  serialNumber     String   @unique
+  ip               String   @unique
+  model            String
+  ciId             String   @unique
+  assetType        String
+  description      String
+  equipmentDate    DateTime
+  location         String
+  responsible      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  deletedAt        DateTime?
+
+  createdById String  @db.Uuid
+  updatedById String  @db.Uuid
+  deletedById String? @db.Uuid
+  createdBy   User    @relation("ComputerEquipmentCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User    @relation("ComputerEquipmentUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy   User?   @relation("ComputerEquipmentDeletedBy", fields: [deletedById], references: [id])
+
+  @@index([assetType])
+  @@index([location])
+  @@index([deletedAt])
+  @@map("computer_equipment")
 }
 
 model UserRole {

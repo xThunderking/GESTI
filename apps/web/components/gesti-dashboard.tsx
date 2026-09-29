@@ -13,10 +13,12 @@ import {
   Filter,
   FileText,
   KeyRound,
+  Laptop,
   LogOut,
   Mail,
   Menu,
   Network,
+  Phone,
   Plus,
   Printer,
   Search,
@@ -65,7 +67,16 @@ type HealthResponse = {
 };
 
 type ViewName =
-  'dashboard' | 'users' | 'printers' | 'toners' | 'areas' | 'tower-ips' | 'it-services';
+  | 'dashboard'
+  | 'users'
+  | 'printers'
+  | 'toners'
+  | 'computer-equipment'
+  | 'extensions'
+  | 'haq-ips'
+  | 'areas'
+  | 'tower-ips'
+  | 'it-services';
 type UserStatus = 'Activo' | 'Inactivo';
 type PrinterStatus = 'ACTIVA' | 'INACTIVA' | 'REPARACION' | 'BAJA';
 type UserRow = {
@@ -123,6 +134,23 @@ type TonerFormState = {
   printerId: string;
 };
 
+type ApiComputerEquipment = {
+  id: string;
+  serialNumber: string;
+  ip: string;
+  model: string;
+  ciId: string;
+  assetType: string;
+  description: string;
+  equipmentDate: string;
+  location: string;
+  responsible: string;
+  createdBy: { name: string };
+  updatedBy: { name: string };
+};
+
+type ComputerEquipmentFormState = Omit<ApiComputerEquipment, 'id' | 'createdBy' | 'updatedBy'>;
+
 type ApiArea = {
   id: string;
   name: string;
@@ -147,6 +175,40 @@ type ApiTowerIp = {
   configuredBy: { name: string };
   createdBy: { name: string };
   updatedBy: { name: string };
+};
+
+type ApiHaqIp = {
+  id: string;
+  ip: string;
+  area: string;
+  responsible: string;
+  username: string;
+  observations: string | null;
+  createdBy: { name: string };
+  updatedBy: { name: string };
+};
+
+type ApiExtension = {
+  id: string;
+  extension: string;
+  description: string;
+  area: string;
+  createdBy: { name: string };
+  updatedBy: { name: string };
+};
+
+type ExtensionFormState = {
+  extension: string;
+  description: string;
+  area: string;
+};
+
+type HaqIpFormState = {
+  ip: string;
+  area: string;
+  responsible: string;
+  username: string;
+  observations: string;
 };
 
 type ApiEmailRequest = {
@@ -207,6 +269,18 @@ const emptyTonerForm: TonerFormState = {
   printerId: '',
 };
 
+const emptyComputerEquipmentForm: ComputerEquipmentFormState = {
+  serialNumber: '',
+  ip: '',
+  model: '',
+  ciId: '',
+  assetType: '',
+  description: '',
+  equipmentDate: new Date().toISOString().slice(0, 10),
+  location: '',
+  responsible: '',
+};
+
 const emptyAreaForm: AreaFormState = {
   name: '',
   description: '',
@@ -219,6 +293,20 @@ const emptyTowerIpForm: TowerIpFormState = {
   responsible: '',
   antenna: false,
   observations: '',
+};
+
+const emptyHaqIpForm: HaqIpFormState = {
+  ip: '',
+  area: '',
+  responsible: '',
+  username: '',
+  observations: '',
+};
+
+const emptyExtensionForm: ExtensionFormState = {
+  extension: '',
+  description: '',
+  area: '',
 };
 
 const emptyEmailRequestForm: EmailRequestFormState = {
@@ -373,12 +461,19 @@ export function GestiDashboard() {
         ? [
             { id: 'printers', label: 'Impresoras', icon: Printer },
             { id: 'toners', label: 'Toners', icon: Boxes },
+            { id: 'computer-equipment', label: 'Equipos de cómputo', icon: Laptop },
+            { id: 'extensions', label: 'Extensiones', icon: Phone },
           ]
         : [],
     },
     {
       label: 'Redes',
-      items: canViewAreas ? [{ id: 'tower-ips', label: 'IPs Torre Médica', icon: Network }] : [],
+      items: canViewAreas
+        ? [
+            { id: 'tower-ips', label: 'IPs Torre Médica', icon: Network },
+            { id: 'haq-ips', label: 'IPs de HAQ', icon: Network },
+          ]
+        : [],
     },
     {
       label: 'Formatos',
@@ -866,12 +961,18 @@ export function GestiDashboard() {
             <PrintersView request={authenticatedRequest} />
           ) : activeView === 'toners' && canViewPrinters ? (
             <TonersView request={authenticatedRequest} />
+          ) : activeView === 'computer-equipment' && canViewPrinters ? (
+            <ComputerEquipmentView request={authenticatedRequest} />
+          ) : activeView === 'extensions' && canViewPrinters ? (
+            <ExtensionsView request={authenticatedRequest} />
           ) : activeView === 'areas' && canViewAreas ? (
             <AreasView request={authenticatedRequest} />
           ) : activeView === 'it-services' && canViewAreas ? (
             <EmailRequestsView request={authenticatedRequest} />
           ) : activeView === 'tower-ips' && canViewAreas ? (
             <TowerIpsView request={authenticatedRequest} />
+          ) : activeView === 'haq-ips' && canViewAreas ? (
+            <HaqIpsView request={authenticatedRequest} />
           ) : null}
         </section>
       </div>
@@ -2048,6 +2149,381 @@ function TowerIpsView({ request }: { request: AuthenticatedRequest }) {
                   <tr>
                     <td className="px-4 py-10 text-center text-muted-foreground" colSpan={6}>
                       No se encontraron IPs.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </>
+  );
+}
+
+function HaqIpsView({ request }: { request: AuthenticatedRequest }) {
+  const queryClient = useQueryClient();
+  const workspace = useModuleWorkspace();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<HaqIpFormState>(emptyHaqIpForm);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+  const ipsQuery = useQuery({
+    queryKey: ['haq-ips'],
+    queryFn: () => request<ApiHaqIp[]>('/haq-ips'),
+  });
+  const saveMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string | null; body: HaqIpFormState }) =>
+      request<ApiHaqIp>(id ? `/haq-ips/${id}` : '/haq-ips', {
+        method: id ? 'PATCH' : 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['haq-ips'] }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => request<void>(`/haq-ips/${id}`, { method: 'DELETE' }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['haq-ips'] }),
+  });
+  const ips = ipsQuery.data ?? [];
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es');
+  const filteredIps = ips.filter((item) =>
+    [item.ip, item.area, item.responsible, item.username, item.observations ?? ''].some((value) =>
+      value.toLocaleLowerCase('es').includes(normalizedSearch),
+    ),
+  );
+
+  function resetForm() {
+    setEditingId(null);
+    setForm(emptyHaqIpForm);
+    setFormError('');
+    setFormSuccess('');
+    workspace.showList();
+  }
+
+  function startNew() {
+    resetForm();
+    workspace.showForm();
+  }
+
+  function editIp(item: ApiHaqIp) {
+    setEditingId(item.id);
+    setForm({
+      ip: item.ip,
+      area: item.area,
+      responsible: item.responsible,
+      username: item.username,
+      observations: item.observations ?? '',
+    });
+    setFormError('');
+    setFormSuccess('');
+    workspace.showForm();
+  }
+
+  async function removeIp(item: ApiHaqIp) {
+    if (!window.confirm(`Dar de baja la IP de HAQ ${item.ip}?`)) return;
+    try {
+      await deleteMutation.mutateAsync(item.id);
+      if (editingId === item.id) resetForm();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible dar de baja la IP.');
+    }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const body = {
+      ...form,
+      ip: form.ip.trim(),
+      area: form.area.trim(),
+      responsible: form.responsible.trim(),
+      username: form.username.trim(),
+      observations: form.observations.trim(),
+    };
+    if (!body.ip || !body.area || !body.responsible || !body.username) {
+      setFormError('IP, área, responsable y usuario son obligatorios.');
+      return;
+    }
+    try {
+      const wasEditing = Boolean(editingId);
+      await saveMutation.mutateAsync({ id: editingId, body });
+      resetForm();
+      setFormSuccess(wasEditing ? 'IP de HAQ actualizada.' : 'IP de HAQ registrada.');
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible guardar la IP de HAQ.');
+    }
+  }
+
+  return (
+    <>
+      <header className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal text-foreground">IPs de HAQ</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Registro de IPs, áreas, usuarios y responsables de HAQ.
+          </p>
+        </div>
+        <Button onClick={startNew} variant="outline">
+          <Plus />
+          Nueva IP
+        </Button>
+      </header>
+
+      {ipsQuery.isLoading ? (
+        <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
+          Cargando IPs de HAQ...
+        </p>
+      ) : null}
+      {ipsQuery.error ? (
+        <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
+          {ipsQuery.error.message}
+        </p>
+      ) : null}
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <UserMetric icon={Network} label="IPs registradas" value={ips.length} />
+        <UserMetric
+          icon={Building2}
+          label="Áreas"
+          value={new Set(ips.map((item) => item.area)).size}
+        />
+        <UserMetric
+          icon={Users}
+          label="Responsables"
+          value={new Set(ips.map((item) => item.responsible)).size}
+        />
+        <UserMetric
+          icon={UserCog}
+          label="Usuarios"
+          value={new Set(ips.map((item) => item.username)).size}
+        />
+      </section>
+
+      {formError && workspace.pane === 'list' ? (
+        <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {formError}
+        </p>
+      ) : null}
+      {formSuccess ? (
+        <p
+          role="status"
+          className="mt-5 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800"
+        >
+          {formSuccess}
+        </p>
+      ) : null}
+      <div id={workspace.anchorId} className="scroll-mt-20">
+        <ModuleWorkspaceTabs
+          pane={workspace.pane}
+          onShowList={workspace.showList}
+          onShowForm={workspace.showForm}
+          formLabel={editingId ? 'Editar' : 'Nuevo'}
+        />
+      </div>
+      <section
+        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(320px,400px)_minmax(0,1fr)]"
+        data-mobile-pane={workspace.pane}
+      >
+        <form
+          data-pane="form"
+          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
+          onSubmit={submit}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">
+                {editingId ? 'Editar IP de HAQ' : 'Nueva IP de HAQ'}
+              </h2>
+              <p className="text-sm text-muted-foreground">Las observaciones son opcionales.</p>
+            </div>
+            {editingId ? (
+              <Button onClick={resetForm} size="sm" type="button" variant="ghost">
+                <X />
+                Cancelar
+              </Button>
+            ) : null}
+          </div>
+          <div className="mt-4 grid gap-3">
+            <label className="grid gap-1.5 text-sm font-medium">
+              IP
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => setForm((current) => ({ ...current, ip: event.target.value }))}
+                required
+                value={form.ip}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Área
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, area: event.target.value }))
+                }
+                required
+                value={form.area}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Responsable
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, responsible: event.target.value }))
+                }
+                required
+                value={form.responsible}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Usuario
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, username: event.target.value }))
+                }
+                required
+                value={form.username}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Observaciones <span className="font-normal text-muted-foreground">(opcional)</span>
+              <textarea
+                className="min-h-24 resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, observations: event.target.value }))
+                }
+                value={form.observations}
+              />
+            </label>
+          </div>
+          {formError && workspace.pane === 'form' ? (
+            <p
+              role="alert"
+              className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              {formError}
+            </p>
+          ) : null}
+          <Button className="mt-4 w-full" disabled={saveMutation.isPending} type="submit">
+            {saveMutation.isPending ? (
+              'Guardando...'
+            ) : editingId ? (
+              <>
+                <Edit3 /> Guardar cambios
+              </>
+            ) : (
+              <>
+                <Plus /> Registrar IP
+              </>
+            )}
+          </Button>
+        </form>
+
+        <section
+          data-pane="list"
+          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
+        >
+          <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Directorio de IPs de HAQ</h2>
+              <p className="text-sm text-muted-foreground">{filteredIps.length} registro(s)</p>
+            </div>
+            <label className="flex h-10 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
+              <Search className="size-4 shrink-0 text-muted-foreground" />
+              <span className="sr-only">Buscar IPs de HAQ</span>
+              <input
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Buscar IP, área o usuario"
+                type="search"
+                value={searchTerm}
+              />
+            </label>
+          </div>
+          <RecordCards
+            items={filteredIps}
+            getKey={(item) => item.id}
+            title={(item) => item.ip}
+            subtitle={(item) => item.area}
+            fields={[
+              { label: 'Responsable', render: (item) => item.responsible },
+              { label: 'Usuario', render: (item) => item.username },
+              {
+                label: 'Observaciones',
+                render: (item) => item.observations || 'Sin observaciones',
+              },
+            ]}
+            actions={(item) => (
+              <>
+                <Button onClick={() => editIp(item)} type="button" variant="outline">
+                  <Edit3 /> Editar
+                </Button>
+                <Button
+                  disabled={deleteMutation.isPending}
+                  onClick={() => void removeIp(item)}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2 /> Eliminar
+                </Button>
+              </>
+            )}
+            emptyMessage="No se encontraron IPs de HAQ."
+          />
+          <div className="hidden overflow-x-auto xl:block">
+            <table className="w-full min-w-[820px] text-sm">
+              <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">IP</th>
+                  <th className="px-4 py-3 font-semibold">Área</th>
+                  <th className="px-4 py-3 font-semibold">Responsable</th>
+                  <th className="px-4 py-3 font-semibold">Usuario</th>
+                  <th className="px-4 py-3 font-semibold">Observaciones</th>
+                  <th className="px-4 py-3 text-right font-semibold">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredIps.map((item) => (
+                  <tr
+                    className={editingId === item.id ? 'bg-secondary/70' : undefined}
+                    key={item.id}
+                  >
+                    <td className="px-4 py-3 font-mono font-medium">{item.ip}</td>
+                    <td className="px-4 py-3">{item.area}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{item.responsible}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{item.username}</td>
+                    <td className="max-w-sm px-4 py-3 text-muted-foreground">
+                      {item.observations || 'Sin observaciones'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          aria-label={`Editar ${item.ip}`}
+                          onClick={() => editIp(item)}
+                          size="icon"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Edit3 />
+                        </Button>
+                        <Button
+                          aria-label={`Eliminar ${item.ip}`}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => void removeIp(item)}
+                          size="icon"
+                          type="button"
+                          variant="destructive"
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredIps.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={6}>
+                      No se encontraron IPs de HAQ.
                     </td>
                   </tr>
                 ) : null}
@@ -3285,6 +3761,803 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
                   <tr>
                     <td className="px-4 py-10 text-center text-muted-foreground" colSpan={5}>
                       No se encontraron toners.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </>
+  );
+}
+
+function ComputerEquipmentView({ request }: { request: AuthenticatedRequest }) {
+  const queryClient = useQueryClient();
+  const workspace = useModuleWorkspace();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<ComputerEquipmentFormState>(emptyComputerEquipmentForm);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+  const equipmentQuery = useQuery({
+    queryKey: ['computer-equipment'],
+    queryFn: () => request<ApiComputerEquipment[]>('/computer-equipment'),
+  });
+  const saveMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string | null; body: ComputerEquipmentFormState }) =>
+      request<ApiComputerEquipment>(id ? `/computer-equipment/${id}` : '/computer-equipment', {
+        method: id ? 'PATCH' : 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['computer-equipment'] }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => request<void>(`/computer-equipment/${id}`, { method: 'DELETE' }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['computer-equipment'] }),
+  });
+  const equipment = equipmentQuery.data ?? [];
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es');
+  const filteredEquipment = equipment.filter((item) =>
+    [
+      item.serialNumber,
+      item.ip,
+      item.model,
+      item.ciId,
+      item.assetType,
+      item.description,
+      item.location,
+      item.responsible,
+    ].some((value) => value.toLocaleLowerCase('es').includes(normalizedSearch)),
+  );
+
+  function resetForm() {
+    setEditingId(null);
+    setForm(emptyComputerEquipmentForm);
+    setFormError('');
+    setFormSuccess('');
+    workspace.showList();
+  }
+
+  function startNew() {
+    resetForm();
+    workspace.showForm();
+  }
+
+  function editEquipment(item: ApiComputerEquipment) {
+    setEditingId(item.id);
+    setForm({
+      serialNumber: item.serialNumber,
+      ip: item.ip,
+      model: item.model,
+      ciId: item.ciId,
+      assetType: item.assetType,
+      description: item.description,
+      equipmentDate: item.equipmentDate.slice(0, 10),
+      location: item.location,
+      responsible: item.responsible,
+    });
+    setFormError('');
+    setFormSuccess('');
+    workspace.showForm();
+  }
+
+  async function removeEquipment(item: ApiComputerEquipment) {
+    if (!window.confirm(`Dar de baja el equipo ${item.serialNumber}?`)) return;
+    try {
+      await deleteMutation.mutateAsync(item.id);
+      if (editingId === item.id) resetForm();
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : 'No fue posible dar de baja el equipo.',
+      );
+    }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const body = {
+      ...form,
+      serialNumber: form.serialNumber.trim(),
+      ip: form.ip.trim(),
+      model: form.model.trim(),
+      ciId: form.ciId.trim(),
+      assetType: form.assetType.trim(),
+      description: form.description.trim(),
+      location: form.location.trim(),
+      responsible: form.responsible.trim(),
+    };
+    if (Object.values(body).some((value) => !String(value).trim())) {
+      setFormError('Todos los campos son obligatorios.');
+      return;
+    }
+    try {
+      const wasEditing = Boolean(editingId);
+      await saveMutation.mutateAsync({ id: editingId, body });
+      resetForm();
+      setFormSuccess(wasEditing ? 'Equipo actualizado.' : 'Equipo registrado.');
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible guardar el equipo.');
+    }
+  }
+
+  return (
+    <>
+      <header className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal text-foreground">
+            Equipos de cómputo
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Inventario de computadoras, identificadores, ubicación y responsables.
+          </p>
+        </div>
+        <Button onClick={startNew} variant="outline">
+          <Plus />
+          Nuevo equipo
+        </Button>
+      </header>
+
+      {equipmentQuery.isLoading ? (
+        <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
+          Cargando equipos...
+        </p>
+      ) : null}
+      {equipmentQuery.error ? (
+        <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
+          {equipmentQuery.error.message}
+        </p>
+      ) : null}
+
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <UserMetric icon={Laptop} label="Equipos registrados" value={equipment.length} />
+        <UserMetric
+          icon={Network}
+          label="Con IP asignada"
+          value={equipment.filter((item) => item.ip).length}
+        />
+        <UserMetric
+          icon={Building2}
+          label="Ubicaciones"
+          value={new Set(equipment.map((item) => item.location)).size}
+        />
+        <UserMetric
+          icon={Users}
+          label="Responsables"
+          value={new Set(equipment.map((item) => item.responsible)).size}
+        />
+      </section>
+
+      {formError && workspace.pane === 'list' ? (
+        <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {formError}
+        </p>
+      ) : null}
+      {formSuccess ? (
+        <p
+          role="status"
+          className="mt-5 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800"
+        >
+          {formSuccess}
+        </p>
+      ) : null}
+      <div id={workspace.anchorId} className="scroll-mt-20">
+        <ModuleWorkspaceTabs
+          pane={workspace.pane}
+          onShowList={workspace.showList}
+          onShowForm={workspace.showForm}
+          formLabel={editingId ? 'Editar' : 'Nuevo'}
+        />
+      </div>
+      <section
+        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(360px,460px)_minmax(0,1fr)]"
+        data-mobile-pane={workspace.pane}
+      >
+        <form
+          data-pane="form"
+          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
+          onSubmit={submit}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">
+                {editingId ? 'Editar equipo' : 'Nuevo equipo'}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Captura la información de control patrimonial.
+              </p>
+            </div>
+            {editingId ? (
+              <Button onClick={resetForm} size="sm" type="button" variant="ghost">
+                <X />
+                Cancelar
+              </Button>
+            ) : null}
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1.5 text-sm font-medium">
+              No. de serie
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, serialNumber: event.target.value }))
+                }
+                required
+                value={form.serialNumber}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              IP
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => setForm((current) => ({ ...current, ip: event.target.value }))}
+                required
+                value={form.ip}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium sm:col-span-2">
+              Modelo
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, model: event.target.value }))
+                }
+                required
+                value={form.model}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              CI-ID
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, ciId: event.target.value }))
+                }
+                required
+                value={form.ciId}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Tipo de activo
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, assetType: event.target.value }))
+                }
+                required
+                value={form.assetType}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium sm:col-span-2">
+              Descripción
+              <textarea
+                className="min-h-20 resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, description: event.target.value }))
+                }
+                required
+                value={form.description}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Fecha
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, equipmentDate: event.target.value }))
+                }
+                required
+                type="date"
+                value={form.equipmentDate}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Ubicación
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, location: event.target.value }))
+                }
+                required
+                value={form.location}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium sm:col-span-2">
+              Responsable
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, responsible: event.target.value }))
+                }
+                required
+                value={form.responsible}
+              />
+            </label>
+          </div>
+          {formError && workspace.pane === 'form' ? (
+            <p
+              role="alert"
+              className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              {formError}
+            </p>
+          ) : null}
+          <Button className="mt-4 w-full" disabled={saveMutation.isPending} type="submit">
+            {saveMutation.isPending ? (
+              'Guardando...'
+            ) : editingId ? (
+              <>
+                <Edit3 /> Guardar cambios
+              </>
+            ) : (
+              <>
+                <Plus /> Registrar equipo
+              </>
+            )}
+          </Button>
+        </form>
+
+        <section
+          data-pane="list"
+          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
+        >
+          <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Directorio de equipos</h2>
+              <p className="text-sm text-muted-foreground">
+                {filteredEquipment.length} registro(s)
+              </p>
+            </div>
+            <label className="flex h-10 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
+              <Search className="size-4 shrink-0 text-muted-foreground" />
+              <span className="sr-only">Buscar equipos</span>
+              <input
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Buscar por serie, CI-ID, IP o responsable"
+                type="search"
+                value={searchTerm}
+              />
+            </label>
+          </div>
+          <RecordCards
+            items={filteredEquipment}
+            getKey={(item) => item.id}
+            title={(item) => item.model}
+            subtitle={(item) => `${item.serialNumber} · ${item.ip}`}
+            fields={[
+              { label: 'CI-ID', render: (item) => item.ciId },
+              { label: 'Tipo de activo', render: (item) => item.assetType },
+              { label: 'Ubicación', render: (item) => item.location },
+              { label: 'Responsable', render: (item) => item.responsible },
+              {
+                label: 'Fecha',
+                render: (item) => new Date(item.equipmentDate).toLocaleDateString('es-MX'),
+              },
+              { label: 'Descripción', render: (item) => item.description },
+            ]}
+            actions={(item) => (
+              <>
+                <Button onClick={() => editEquipment(item)} type="button" variant="outline">
+                  <Edit3 /> Editar
+                </Button>
+                <Button
+                  disabled={deleteMutation.isPending}
+                  onClick={() => void removeEquipment(item)}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2 /> Eliminar
+                </Button>
+              </>
+            )}
+            emptyMessage="No se encontraron equipos."
+          />
+          <div className="hidden overflow-x-auto xl:block">
+            <table className="w-full min-w-[1200px] text-sm">
+              <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Serie / CI-ID</th>
+                  <th className="px-4 py-3 font-semibold">IP</th>
+                  <th className="px-4 py-3 font-semibold">Modelo / tipo</th>
+                  <th className="px-4 py-3 font-semibold">Descripción</th>
+                  <th className="px-4 py-3 font-semibold">Fecha</th>
+                  <th className="px-4 py-3 font-semibold">Ubicación</th>
+                  <th className="px-4 py-3 font-semibold">Responsable</th>
+                  <th className="px-4 py-3 text-right font-semibold">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredEquipment.map((item) => (
+                  <tr
+                    className={editingId === item.id ? 'bg-secondary/70' : undefined}
+                    key={item.id}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{item.serialNumber}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{item.ciId}</div>
+                    </td>
+                    <td className="px-4 py-3 font-mono">{item.ip}</td>
+                    <td className="px-4 py-3">
+                      <div>{item.model}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{item.assetType}</div>
+                    </td>
+                    <td className="max-w-xs px-4 py-3 text-muted-foreground">{item.description}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {new Date(item.equipmentDate).toLocaleDateString('es-MX')}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{item.location}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{item.responsible}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          aria-label={`Editar ${item.model}`}
+                          onClick={() => editEquipment(item)}
+                          size="icon"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Edit3 />
+                        </Button>
+                        <Button
+                          aria-label={`Eliminar ${item.model}`}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => void removeEquipment(item)}
+                          size="icon"
+                          type="button"
+                          variant="destructive"
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredEquipment.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={8}>
+                      No se encontraron equipos.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </>
+  );
+}
+
+function ExtensionsView({ request }: { request: AuthenticatedRequest }) {
+  const queryClient = useQueryClient();
+  const workspace = useModuleWorkspace();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<ExtensionFormState>(emptyExtensionForm);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+  const extensionsQuery = useQuery({
+    queryKey: ['extensions'],
+    queryFn: () => request<ApiExtension[]>('/extensions'),
+  });
+  const saveMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string | null; body: ExtensionFormState }) =>
+      request<ApiExtension>(id ? `/extensions/${id}` : '/extensions', {
+        method: id ? 'PATCH' : 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['extensions'] }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => request<void>(`/extensions/${id}`, { method: 'DELETE' }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['extensions'] }),
+  });
+  const extensions = extensionsQuery.data ?? [];
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es');
+  const filteredExtensions = extensions.filter((item) =>
+    [item.extension, item.description, item.area].some((value) =>
+      value.toLocaleLowerCase('es').includes(normalizedSearch),
+    ),
+  );
+
+  function resetForm() {
+    setEditingId(null);
+    setForm(emptyExtensionForm);
+    setFormError('');
+    setFormSuccess('');
+    workspace.showList();
+  }
+
+  function startNew() {
+    resetForm();
+    workspace.showForm();
+  }
+
+  function editExtension(item: ApiExtension) {
+    setEditingId(item.id);
+    setForm({ extension: item.extension, description: item.description, area: item.area });
+    setFormError('');
+    setFormSuccess('');
+    workspace.showForm();
+  }
+
+  async function removeExtension(item: ApiExtension) {
+    if (!window.confirm(`Dar de baja la extensión ${item.extension}?`)) return;
+    try {
+      await deleteMutation.mutateAsync(item.id);
+      if (editingId === item.id) resetForm();
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : 'No fue posible dar de baja la extensión.',
+      );
+    }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const body = {
+      extension: form.extension.trim(),
+      description: form.description.trim(),
+      area: form.area.trim(),
+    };
+    if (!body.extension || !body.description || !body.area) {
+      setFormError('Extensión, descripción y área son obligatorios.');
+      return;
+    }
+    try {
+      const wasEditing = Boolean(editingId);
+      await saveMutation.mutateAsync({ id: editingId, body });
+      resetForm();
+      setFormSuccess(wasEditing ? 'Extensión actualizada.' : 'Extensión registrada.');
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible guardar la extensión.');
+    }
+  }
+
+  return (
+    <>
+      <header className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal text-foreground">Extensiones</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Directorio de extensiones telefónicas por área.
+          </p>
+        </div>
+        <Button onClick={startNew} variant="outline">
+          <Plus /> Nueva extensión
+        </Button>
+      </header>
+      {extensionsQuery.isLoading ? (
+        <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
+          Cargando extensiones...
+        </p>
+      ) : null}
+      {extensionsQuery.error ? (
+        <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
+          {extensionsQuery.error.message}
+        </p>
+      ) : null}
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <UserMetric icon={Phone} label="Extensiones registradas" value={extensions.length} />
+        <UserMetric
+          icon={Building2}
+          label="Áreas"
+          value={new Set(extensions.map((item) => item.area)).size}
+        />
+        <UserMetric
+          icon={CheckCircle2}
+          label="Con descripción"
+          value={extensions.filter((item) => Boolean(item.description)).length}
+        />
+      </section>
+      {formError && workspace.pane === 'list' ? (
+        <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {formError}
+        </p>
+      ) : null}
+      {formSuccess ? (
+        <p
+          role="status"
+          className="mt-5 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800"
+        >
+          {formSuccess}
+        </p>
+      ) : null}
+      <div id={workspace.anchorId} className="scroll-mt-20">
+        <ModuleWorkspaceTabs
+          pane={workspace.pane}
+          onShowList={workspace.showList}
+          onShowForm={workspace.showForm}
+          formLabel={editingId ? 'Editar' : 'Nuevo'}
+        />
+      </div>
+      <section
+        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
+        data-mobile-pane={workspace.pane}
+      >
+        <form
+          data-pane="form"
+          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
+          onSubmit={submit}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">
+                {editingId ? 'Editar extensión' : 'Nueva extensión'}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Registra la información telefónica del área.
+              </p>
+            </div>
+            {editingId ? (
+              <Button onClick={resetForm} size="sm" type="button" variant="ghost">
+                <X /> Cancelar
+              </Button>
+            ) : null}
+          </div>
+          <div className="mt-4 grid gap-3">
+            <label className="grid gap-1.5 text-sm font-medium">
+              Extensión
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, extension: event.target.value }))
+                }
+                required
+                value={form.extension}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Descripción
+              <textarea
+                className="min-h-24 resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, description: event.target.value }))
+                }
+                required
+                value={form.description}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium">
+              Área
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, area: event.target.value }))
+                }
+                required
+                value={form.area}
+              />
+            </label>
+          </div>
+          {formError && workspace.pane === 'form' ? (
+            <p
+              role="alert"
+              className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              {formError}
+            </p>
+          ) : null}
+          <Button className="mt-4 w-full" disabled={saveMutation.isPending} type="submit">
+            {saveMutation.isPending ? (
+              'Guardando...'
+            ) : editingId ? (
+              <>
+                <Edit3 /> Guardar cambios
+              </>
+            ) : (
+              <>
+                <Plus /> Registrar extensión
+              </>
+            )}
+          </Button>
+        </form>
+        <section
+          data-pane="list"
+          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
+        >
+          <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Directorio de extensiones</h2>
+              <p className="text-sm text-muted-foreground">
+                {filteredExtensions.length} registro(s)
+              </p>
+            </div>
+            <label className="flex h-10 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
+              <Search className="size-4 shrink-0 text-muted-foreground" />
+              <span className="sr-only">Buscar extensiones</span>
+              <input
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Buscar extensión o área"
+                type="search"
+                value={searchTerm}
+              />
+            </label>
+          </div>
+          <RecordCards
+            items={filteredExtensions}
+            getKey={(item) => item.id}
+            title={(item) => `Extensión ${item.extension}`}
+            subtitle={(item) => item.area}
+            fields={[
+              { label: 'Descripción', render: (item) => item.description },
+              { label: 'Área', render: (item) => item.area },
+              { label: 'Creado por', render: (item) => item.createdBy.name },
+              { label: 'Editado por', render: (item) => item.updatedBy.name },
+            ]}
+            actions={(item) => (
+              <>
+                <Button onClick={() => editExtension(item)} type="button" variant="outline">
+                  <Edit3 /> Editar
+                </Button>
+                <Button
+                  disabled={deleteMutation.isPending}
+                  onClick={() => void removeExtension(item)}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2 /> Eliminar
+                </Button>
+              </>
+            )}
+            emptyMessage="No se encontraron extensiones."
+          />
+          <div className="hidden overflow-x-auto xl:block">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Extensión</th>
+                  <th className="px-4 py-3 font-semibold">Descripción</th>
+                  <th className="px-4 py-3 font-semibold">Área</th>
+                  <th className="px-4 py-3 font-semibold">Auditoría</th>
+                  <th className="px-4 py-3 text-right font-semibold">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredExtensions.map((item) => (
+                  <tr
+                    className={editingId === item.id ? 'bg-secondary/70' : undefined}
+                    key={item.id}
+                  >
+                    <td className="px-4 py-3 font-mono font-medium">{item.extension}</td>
+                    <td className="max-w-sm px-4 py-3 text-muted-foreground">{item.description}</td>
+                    <td className="px-4 py-3">{item.area}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      <div>Creado: {item.createdBy.name}</div>
+                      <div>Editado: {item.updatedBy.name}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          aria-label={`Editar ${item.extension}`}
+                          onClick={() => editExtension(item)}
+                          size="icon"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Edit3 />
+                        </Button>
+                        <Button
+                          aria-label={`Eliminar ${item.extension}`}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => void removeExtension(item)}
+                          size="icon"
+                          type="button"
+                          variant="destructive"
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredExtensions.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={5}>
+                      No se encontraron extensiones.
                     </td>
                   </tr>
                 ) : null}

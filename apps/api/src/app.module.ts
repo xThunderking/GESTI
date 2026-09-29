@@ -11,6 +11,9 @@ import { AreasModule } from './areas/areas.module';
 import { TowerIpsModule } from './tower-ips/tower-ips.module';
 import { EmailRequestsModule } from './email-requests/email-requests.module';
 import { TonersModule } from './toners/toners.module';
+import { ComputerEquipmentModule } from './computer-equipment/computer-equipment.module';
+import { HaqIpsModule } from './haq-ips/haq-ips.module';
+import { ExtensionsModule } from './extensions/extensions.module';
 
 @Module({
   imports: [
@@ -28,6 +31,9 @@ import { TonersModule } from './toners/toners.module';
     TowerIpsModule,
     EmailRequestsModule,
     TonersModule,
+    ComputerEquipmentModule,
+    HaqIpsModule,
+    ExtensionsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
