@@ -11,7 +11,7 @@ Sistema de gestion del departamento de TI del Hospital Angeles Queretaro.
 
 ## Programas necesarios
 
-1. Node.js 24 LTS y npm 11.
+1. Node.js 22.23.2 y npm 10 o superior.
 2. Git.
 3. Visual Studio Code.
 4. Docker Desktop para Windows con backend WSL 2.
@@ -21,8 +21,8 @@ Sistema de gestion del departamento de TI del Hospital Angeles Queretaro.
 
 Ya se detecto localmente:
 
-- Node.js `v24.12.0`
-- npm `11.6.2`
+- Node.js `v22.23.2`
+- npm `12.0.2`
 - Git `2.52.0.windows.1`
 - Docker Engine `29.7.2`
 - Docker Compose `v5.4.0`

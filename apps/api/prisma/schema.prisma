@@ -15,6 +15,13 @@ enum RoleName {
   USUARIO
 }
 
+enum PrinterStatus {
+  ACTIVA
+  INACTIVA
+  REPARACION
+  BAJA
+}
+
 model Role {
   id          String   @id @default(uuid()) @db.Uuid
   name        RoleName @unique
@@ -40,8 +47,149 @@ model User {
   sessions      AuthSession[]
   refreshTokens RefreshToken[]
   roles         UserRole[]
+  printersCreated Printer[] @relation("PrinterCreatedBy")
+  printersUpdated Printer[] @relation("PrinterUpdatedBy")
+  printersDeleted Printer[] @relation("PrinterDeletedBy")
+  areasCreated Areas[] @relation("AreaCreatedBy")
+  areasUpdated Areas[] @relation("AreaUpdatedBy")
+  areasDeleted Areas[] @relation("AreaDeletedBy")
+  towerIpsConfigured TowerIp[] @relation("TowerIpConfiguredBy")
+  towerIpsCreated TowerIp[] @relation("TowerIpCreatedBy")
+  towerIpsUpdated TowerIp[] @relation("TowerIpUpdatedBy")
+  towerIpsDeleted TowerIp[] @relation("TowerIpDeletedBy")
+  emailRequestsCreated EmailRequest[] @relation("EmailRequestCreatedBy")
+  emailRequestsUpdated EmailRequest[] @relation("EmailRequestUpdatedBy")
+  emailRequestsDeleted EmailRequest[] @relation("EmailRequestDeletedBy")
+  tonersCreated Toner[] @relation("TonerCreatedBy")
+  tonersUpdated Toner[] @relation("TonerUpdatedBy")
+  tonersDeleted Toner[] @relation("TonerDeletedBy")
 
   @@map("users")
+}
+
+model EmailRequest {
+  id              String    @id @default(uuid()) @db.Uuid
+  requestDate     DateTime
+  fullName        String
+  collaboratorNo  String
+  area            String
+  position        String
+  justification   String
+  suggestedEmail  String
+  service         String
+  requestingBoss  String
+  areaDirector    String
+  tiResponsible   String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+  lastGeneratedAt DateTime?
+
+  createdById String  @db.Uuid
+  updatedById String  @db.Uuid
+  deletedById String? @db.Uuid
+  createdBy   User    @relation("EmailRequestCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User    @relation("EmailRequestUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy   User?   @relation("EmailRequestDeletedBy", fields: [deletedById], references: [id])
+
+  @@index([collaboratorNo])
+  @@index([requestDate])
+  @@index([deletedAt])
+  @@map("email_requests")
+}
+
+model TowerIp {
+  id            String   @id @default(uuid()) @db.Uuid
+  ip            String   @unique
+  office        String
+  location      String
+  responsible   String
+  antenna       Boolean  @default(false)
+  observations  String?
+  configuredAt  DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+
+  configuredById String @db.Uuid
+  createdById    String @db.Uuid
+  updatedById    String @db.Uuid
+  deletedById    String? @db.Uuid
+  configuredBy   User   @relation("TowerIpConfiguredBy", fields: [configuredById], references: [id])
+  createdBy      User   @relation("TowerIpCreatedBy", fields: [createdById], references: [id])
+  updatedBy      User   @relation("TowerIpUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy      User?  @relation("TowerIpDeletedBy", fields: [deletedById], references: [id])
+
+  @@index([office])
+  @@index([deletedAt])
+  @@map("tower_ips")
+}
+
+model Areas {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String    @unique
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  createdById String  @db.Uuid
+  updatedById String  @db.Uuid
+  deletedById String? @db.Uuid
+  createdBy   User    @relation("AreaCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User    @relation("AreaUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy   User?   @relation("AreaDeletedBy", fields: [deletedById], references: [id])
+
+  @@index([deletedAt])
+  @@map("areas")
+}
+
+model Printer {
+  id               String        @id @default(uuid()) @db.Uuid
+  area             String
+  model            String
+  serialNumber     String        @unique
+  status           PrinterStatus @default(ACTIVA)
+  responsible      String
+  installationDate DateTime
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  deletedAt        DateTime?
+
+  createdById String  @db.Uuid
+  updatedById String  @db.Uuid
+  deletedById String? @db.Uuid
+  createdBy   User    @relation("PrinterCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User    @relation("PrinterUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy   User?   @relation("PrinterDeletedBy", fields: [deletedById], references: [id])
+  toners      Toner[]
+
+  @@index([area])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("printers")
+}
+
+model Toner {
+  id        String   @id @default(uuid()) @db.Uuid
+  model     String
+  color     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  printerId String  @db.Uuid
+  printer   Printer @relation(fields: [printerId], references: [id], onDelete: Restrict)
+  createdById String  @db.Uuid
+  updatedById String  @db.Uuid
+  deletedById String? @db.Uuid
+  createdBy   User    @relation("TonerCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User    @relation("TonerUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy   User?   @relation("TonerDeletedBy", fields: [deletedById], references: [id])
+
+  @@index([printerId])
+  @@index([deletedAt])
+  @@map("toners")
 }
 
 model UserRole {

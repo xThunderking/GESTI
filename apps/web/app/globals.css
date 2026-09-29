@@ -67,8 +67,44 @@
 body {
   min-height: 100vh;
   background:
-    linear-gradient(180deg, rgba(245, 247, 250, 0.96), rgba(238, 244, 249, 0.96)),
-    var(--background);
+    linear-gradient(180deg, rgba(245, 247, 250, 0.96), rgba(238, 244, 249, 0.96)), var(--background);
   color: var(--foreground);
   font-family: Montserrat, Inter, Arial, Helvetica, sans-serif;
+}
+
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+}
+
+@media (max-width: 1279px) {
+  main button {
+    min-height: 44px;
+  }
+
+  [role='status'],
+  [role='alert'] {
+    scroll-margin-top: 5rem;
+  }
+
+  [data-pane='form'] :is(input, select, textarea) {
+    min-height: 44px;
+  }
+
+  .record-card-actions button {
+    min-height: 44px;
+  }
+
+  [data-mobile-pane='list'] > [data-pane='form'],
+  [data-mobile-pane='form'] > [data-pane='list'] {
+    display: none;
+  }
 }

@@ -4,16 +4,21 @@ import Image from 'next/image';
 import {
   AlertTriangle,
   BarChart3,
+  Building2,
   Boxes,
   CheckCircle2,
   ClipboardList,
   Download,
   Edit3,
   Filter,
+  FileText,
   KeyRound,
   LogOut,
   Mail,
+  Menu,
+  Network,
   Plus,
+  Printer,
   Search,
   Server,
   ShieldCheck,
@@ -41,6 +46,8 @@ import {
   YAxis,
 } from 'recharts';
 import { Button } from '@/components/ui/button';
+import { RecordCards } from '@/components/ui/record-cards';
+import { ModuleWorkspaceTabs, useModuleWorkspace } from '@/components/ui/module-workspace';
 import {
   ApiError,
   protectedApiRequest,
@@ -57,8 +64,10 @@ type HealthResponse = {
   timestamp: string;
 };
 
-type ViewName = 'dashboard' | 'users';
+type ViewName =
+  'dashboard' | 'users' | 'printers' | 'toners' | 'areas' | 'tower-ips' | 'it-services';
 type UserStatus = 'Activo' | 'Inactivo';
+type PrinterStatus = 'ACTIVA' | 'INACTIVA' | 'REPARACION' | 'BAJA';
 type UserRow = {
   id: string;
   email: string;
@@ -76,6 +85,102 @@ type UserFormState = {
   status: UserStatus;
 };
 
+type ApiPrinter = {
+  id: string;
+  area: string;
+  model: string;
+  serialNumber: string;
+  status: PrinterStatus;
+  responsible: string;
+  installationDate: string;
+  createdBy: { name: string };
+  updatedBy: { name: string };
+  deletedBy: { name: string } | null;
+};
+
+type PrinterFormState = {
+  area: string;
+  model: string;
+  serialNumber: string;
+  status: PrinterStatus;
+  responsible: string;
+  installationDate: string;
+};
+
+type ApiToner = {
+  id: string;
+  model: string;
+  color: string;
+  printerId: string;
+  printer: { id: string; model: string; serialNumber: string; area: string };
+  createdBy: { name: string };
+  updatedBy: { name: string };
+};
+
+type TonerFormState = {
+  model: string;
+  color: string;
+  printerId: string;
+};
+
+type ApiArea = {
+  id: string;
+  name: string;
+  description: string | null;
+  createdBy: { name: string };
+  updatedBy: { name: string };
+};
+
+type AreaFormState = {
+  name: string;
+  description: string;
+};
+
+type ApiTowerIp = {
+  id: string;
+  ip: string;
+  office: string;
+  location: string;
+  responsible: string;
+  antenna: boolean;
+  observations: string | null;
+  configuredBy: { name: string };
+  createdBy: { name: string };
+  updatedBy: { name: string };
+};
+
+type ApiEmailRequest = {
+  id: string;
+  requestDate: string;
+  fullName: string;
+  collaboratorNo: string;
+  area: string;
+  position: string;
+  justification: string;
+  suggestedEmail: string;
+  service: string;
+  requestingBoss: string;
+  areaDirector: string;
+  tiResponsible: string;
+  lastGeneratedAt: string | null;
+  createdBy: { name: string };
+  updatedBy: { name: string };
+};
+
+type EmailRequestFormState = Omit<
+  ApiEmailRequest,
+  'id' | 'requestDate' | 'lastGeneratedAt' | 'createdBy' | 'updatedBy'
+>;
+
+type TowerIpFormState = {
+  ip: string;
+  office: string;
+  location: string;
+  responsible: string;
+  antenna: boolean;
+  observations: string;
+};
+
 type AuthenticatedRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
 
 const usersAllowedRoles = new Set<RoleName>(['ADMIN', 'SUPERVISOR']);
@@ -85,6 +190,48 @@ const emptyUserForm: UserFormState = {
   name: '',
   role: 'USUARIO',
   status: 'Activo',
+};
+
+const emptyPrinterForm: PrinterFormState = {
+  area: '',
+  model: '',
+  serialNumber: '',
+  status: 'ACTIVA',
+  responsible: '',
+  installationDate: new Date().toISOString().slice(0, 10),
+};
+
+const emptyTonerForm: TonerFormState = {
+  model: '',
+  color: 'Negro',
+  printerId: '',
+};
+
+const emptyAreaForm: AreaFormState = {
+  name: '',
+  description: '',
+};
+
+const emptyTowerIpForm: TowerIpFormState = {
+  ip: '',
+  office: '',
+  location: '',
+  responsible: '',
+  antenna: false,
+  observations: '',
+};
+
+const emptyEmailRequestForm: EmailRequestFormState = {
+  fullName: '',
+  collaboratorNo: '',
+  area: '',
+  position: '',
+  justification: '',
+  suggestedEmail: '',
+  service: '',
+  requestingBoss: '',
+  areaDirector: '',
+  tiResponsible: '',
 };
 
 const tabStorageKey = 'gesti-tab-id';
@@ -197,6 +344,7 @@ export function GestiDashboard() {
   const [sessionReady, setSessionReady] = useState(false);
   const [loginNotice, setLoginNotice] = useState('');
   const [activeView, setActiveView] = useState<ViewName>('dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const refreshPromise = useRef<Promise<AuthResponse> | null>(null);
   const queryClient = useQueryClient();
   const healthQuery = useQuery({
@@ -208,9 +356,41 @@ export function GestiDashboard() {
   const canViewUsers = currentUser
     ? currentUser.roles.some((role) => usersAllowedRoles.has(role))
     : false;
-  const navigationItems: Array<{ id: ViewName; label: string; icon: LucideIcon }> = [
-    { id: 'dashboard', label: 'Tablero', icon: BarChart3 },
-    ...(canViewUsers ? [{ id: 'users' as const, label: 'Usuarios', icon: Users }] : []),
+  const canViewPrinters = currentUser
+    ? currentUser.roles.some((role) => ['ADMIN', 'SUPERVISOR', 'TI'].includes(role))
+    : false;
+  const canViewAreas = currentUser
+    ? currentUser.roles.some((role) => ['ADMIN', 'SUPERVISOR', 'TI'].includes(role))
+    : false;
+  const navigationSections: Array<{
+    label: string;
+    items: Array<{ id: ViewName; label: string; icon: LucideIcon }>;
+  }> = [
+    { label: 'Principal', items: [{ id: 'dashboard', label: 'Tablero', icon: BarChart3 }] },
+    {
+      label: 'Inventario',
+      items: canViewPrinters
+        ? [
+            { id: 'printers', label: 'Impresoras', icon: Printer },
+            { id: 'toners', label: 'Toners', icon: Boxes },
+          ]
+        : [],
+    },
+    {
+      label: 'Redes',
+      items: canViewAreas ? [{ id: 'tower-ips', label: 'IPs Torre Médica', icon: Network }] : [],
+    },
+    {
+      label: 'Formatos',
+      items: canViewAreas ? [{ id: 'it-services', label: 'Servicios TI', icon: Server }] : [],
+    },
+    {
+      label: 'Administración',
+      items: [
+        ...(canViewUsers ? [{ id: 'users' as const, label: 'Usuarios', icon: Users }] : []),
+        ...(canViewAreas ? [{ id: 'areas' as const, label: 'Áreas', icon: Building2 }] : []),
+      ],
+    },
   ];
 
   const clearLocalSession = useCallback(
@@ -390,48 +570,84 @@ export function GestiDashboard() {
 
   return (
     <main className="min-h-screen bg-[#f5f7fa]">
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[260px_1fr]">
-        <aside className="flex flex-col border-b border-white/10 bg-[#061b38] px-4 py-4 text-white lg:border-b-0 lg:border-r">
-          <BrandMark />
-
-          <nav className="mt-6 grid gap-1">
-            {navigationItems.map((item) => (
-              <button
-                aria-current={activeView === item.id ? 'page' : undefined}
-                className={cn(
-                  'flex h-10 items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white',
-                  activeView === item.id && 'bg-[#00afaa] text-[#061b38]',
-                )}
-                onClick={() => setActiveView(item.id)}
-                key={item.label}
-                type="button"
-              >
-                <item.icon className="size-4" />
-                {item.label}
-              </button>
-            ))}
-          </nav>
-
-          <div className="mt-6 border-t border-white/10 pt-4 lg:mt-auto">
-            <div className="rounded-md border border-white/10 bg-white/8 p-3">
-              <p className="text-sm font-semibold">{currentUser.name}</p>
-              <p className="mt-1 break-all text-xs text-white/65">{currentUser.email}</p>
-              <span className="mt-3 inline-flex rounded-md border border-white/15 bg-white/10 px-2 py-1 text-xs font-semibold text-white">
-                {currentUser.roles.join(', ')}
-              </span>
-            </div>
+      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="sticky top-0 z-30 flex flex-col border-b border-white/10 bg-[#061b38] px-4 py-3 text-white lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r lg:py-4">
+          <div className="flex items-center justify-between lg:block">
+            <BrandMark />
             <Button
-              className="mt-3 w-full justify-start border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
-              onClick={() => handleLogout()}
+              aria-expanded={mobileMenuOpen}
+              aria-controls="gesti-navigation"
+              aria-label={mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'}
+              className="border-white/15 bg-white/10 text-white hover:bg-white/15 hover:text-white lg:hidden"
+              onClick={() => setMobileMenuOpen((open) => !open)}
+              size="icon"
               variant="outline"
             >
-              <LogOut />
-              Cerrar sesion
+              <Menu />
             </Button>
+          </div>
+
+          <div
+            id="gesti-navigation"
+            className={cn(
+              'max-h-[calc(100dvh-4rem)] flex-1 flex-col overflow-y-auto lg:max-h-none lg:overflow-visible',
+              mobileMenuOpen ? 'flex' : 'hidden',
+              'lg:flex',
+            )}
+          >
+            <nav className="mt-5 grid gap-5 lg:mt-6">
+              {navigationSections
+                .filter((section) => section.items.length > 0)
+                .map((section) => (
+                  <div key={section.label}>
+                    <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                      {section.label}
+                    </p>
+                    <div className="grid gap-1">
+                      {section.items.map((item) => (
+                        <button
+                          aria-current={activeView === item.id ? 'page' : undefined}
+                          className={cn(
+                            'flex h-10 items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white',
+                            activeView === item.id && 'bg-[#00afaa] text-[#061b38]',
+                          )}
+                          onClick={() => {
+                            setActiveView(item.id);
+                            setMobileMenuOpen(false);
+                          }}
+                          key={item.label}
+                          type="button"
+                        >
+                          <item.icon className="size-4" />
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+            </nav>
+
+            <div className="mt-6 border-t border-white/10 pt-4 lg:mt-auto">
+              <div className="rounded-md border border-white/10 bg-white/8 p-3">
+                <p className="text-sm font-semibold">{currentUser.name}</p>
+                <p className="mt-1 break-all text-xs text-white/65">{currentUser.email}</p>
+                <span className="mt-3 inline-flex rounded-md border border-white/15 bg-white/10 px-2 py-1 text-xs font-semibold text-white">
+                  {currentUser.roles.join(', ')}
+                </span>
+              </div>
+              <Button
+                className="mt-3 w-full justify-start border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                onClick={() => handleLogout()}
+                variant="outline"
+              >
+                <LogOut />
+                Cerrar sesion
+              </Button>
+            </div>
           </div>
         </aside>
 
-        <section className="px-4 py-5 sm:px-6 lg:px-8">
+        <section className="min-w-0 px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
           {activeView === 'dashboard' ? (
             <>
               <header className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-center xl:justify-between">
@@ -444,20 +660,20 @@ export function GestiDashboard() {
                   </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex h-9 min-w-64 items-center gap-2 rounded-md border bg-card px-3 text-sm text-muted-foreground">
+                <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
+                  <div className="flex h-10 w-full items-center gap-2 rounded-md border bg-card px-3 text-sm text-muted-foreground sm:w-auto sm:min-w-64">
                     <Search className="size-4" />
                     <span>Buscar folio, equipo o usuario</span>
                   </div>
-                  <Button variant="outline">
+                  <Button className="flex-1 sm:flex-none" variant="outline">
                     <Filter />
                     Filtrar
                   </Button>
-                  <Button variant="outline">
+                  <Button className="flex-1 sm:flex-none" variant="outline">
                     <Download />
                     Exportar
                   </Button>
-                  <Button>
+                  <Button className="w-full sm:w-auto">
                     <Plus />
                     Nuevo ticket
                   </Button>
@@ -604,7 +820,18 @@ export function GestiDashboard() {
                       Activos con cambios o revision pendiente
                     </p>
                   </div>
-                  <div className="overflow-x-auto">
+                  <RecordCards
+                    items={inventory}
+                    getKey={(asset) => asset.tag}
+                    title={(asset) => asset.device}
+                    subtitle={(asset) => asset.tag}
+                    fields={[
+                      { label: 'Responsable', render: (asset) => asset.owner },
+                      { label: 'Estado', render: (asset) => asset.state },
+                    ]}
+                    emptyMessage="No hay activos recientes."
+                  />
+                  <div className="hidden overflow-x-auto xl:block">
                     <table className="w-full min-w-[560px] text-sm">
                       <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
                         <tr>
@@ -633,8 +860,18 @@ export function GestiDashboard() {
                 </article>
               </section>
             </>
-          ) : canViewUsers ? (
+          ) : activeView === 'users' && canViewUsers ? (
             <UsersView currentRole={currentRole} request={authenticatedRequest} />
+          ) : activeView === 'printers' && canViewPrinters ? (
+            <PrintersView request={authenticatedRequest} />
+          ) : activeView === 'toners' && canViewPrinters ? (
+            <TonersView request={authenticatedRequest} />
+          ) : activeView === 'areas' && canViewAreas ? (
+            <AreasView request={authenticatedRequest} />
+          ) : activeView === 'it-services' && canViewAreas ? (
+            <EmailRequestsView request={authenticatedRequest} />
+          ) : activeView === 'tower-ips' && canViewAreas ? (
+            <TowerIpsView request={authenticatedRequest} />
           ) : null}
         </section>
       </div>
@@ -778,48 +1015,48 @@ function LoginView({
   return (
     <AuthShell subtitle="Acceso al departamento de TI" title="Iniciar sesion">
       <form className="mt-6 grid gap-4" onSubmit={handleSubmit}>
-          <label className="grid gap-2 text-sm font-medium">
-            Correo
-            <span className="flex h-10 items-center gap-2 rounded-md border bg-background px-3 transition-colors focus-within:border-[#00afaa] focus-within:ring-2 focus-within:ring-[#00afaa]/20">
-              <Mail className="size-4 shrink-0 text-muted-foreground" />
-              <input
-                className="min-w-0 flex-1 bg-transparent text-sm font-normal outline-none"
-                autoComplete="email"
-                onChange={(event) => setEmail(event.target.value)}
-                type="email"
-                value={email}
-              />
-            </span>
-          </label>
+        <label className="grid gap-2 text-sm font-medium">
+          Correo
+          <span className="flex h-11 items-center gap-2 rounded-md border bg-background px-3 transition-colors focus-within:border-[#00afaa] focus-within:ring-2 focus-within:ring-[#00afaa]/20">
+            <Mail className="size-4 shrink-0 text-muted-foreground" />
+            <input
+              className="min-w-0 flex-1 bg-transparent text-sm font-normal outline-none"
+              autoComplete="email"
+              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              value={email}
+            />
+          </span>
+        </label>
 
-          <label className="grid gap-2 text-sm font-medium">
-            Contrasena
-            <span className="flex h-10 items-center gap-2 rounded-md border bg-background px-3 transition-colors focus-within:border-[#00afaa] focus-within:ring-2 focus-within:ring-[#00afaa]/20">
-              <KeyRound className="size-4 shrink-0 text-muted-foreground" />
-              <input
-                className="min-w-0 flex-1 bg-transparent text-sm font-normal outline-none"
-                autoComplete="current-password"
-                onChange={(event) => setPassword(event.target.value)}
-                type="password"
-                value={password}
-              />
-            </span>
-          </label>
+        <label className="grid gap-2 text-sm font-medium">
+          Contrasena
+          <span className="flex h-11 items-center gap-2 rounded-md border bg-background px-3 transition-colors focus-within:border-[#00afaa] focus-within:ring-2 focus-within:ring-[#00afaa]/20">
+            <KeyRound className="size-4 shrink-0 text-muted-foreground" />
+            <input
+              className="min-w-0 flex-1 bg-transparent text-sm font-normal outline-none"
+              autoComplete="current-password"
+              onChange={(event) => setPassword(event.target.value)}
+              type="password"
+              value={password}
+            />
+          </span>
+        </label>
 
-          {error ? (
-            <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>
-          ) : null}
+        {error ? (
+          <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>
+        ) : null}
 
-          {notice ? (
-            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              {notice}
-            </p>
-          ) : null}
+        {notice ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            {notice}
+          </p>
+        ) : null}
 
-          <Button className="bg-[#061b38] hover:bg-[#0a1f44]" disabled={submitting} type="submit">
-            <UserCheck />
-            {submitting ? 'Validando...' : 'Entrar'}
-          </Button>
+        <Button className="bg-[#061b38] hover:bg-[#0a1f44]" disabled={submitting} type="submit">
+          <UserCheck />
+          {submitting ? 'Validando...' : 'Entrar'}
+        </Button>
       </form>
 
       <div className="mt-5 rounded-md border bg-secondary p-3 text-sm">
@@ -882,55 +1119,55 @@ function ChangePasswordView({
   return (
     <AuthShell subtitle={email} title="Crea tu contrasena">
       <form className="mt-6 grid gap-4" onSubmit={handleSubmit}>
-          <label className="grid gap-2 text-sm font-medium">
-            Nueva contrasena
-            <input
-              autoComplete="new-password"
-              className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none transition-colors focus-visible:border-[#00afaa] focus-visible:ring-2 focus-visible:ring-[#00afaa]/20"
-              onChange={(event) => setNewPassword(event.target.value)}
-              type="password"
-              value={newPassword}
-            />
-          </label>
+        <label className="grid gap-2 text-sm font-medium">
+          Nueva contrasena
+          <input
+            autoComplete="new-password"
+            className="h-11 rounded-md border bg-background px-3 text-sm font-normal outline-none transition-colors focus-visible:border-[#00afaa] focus-visible:ring-2 focus-visible:ring-[#00afaa]/20"
+            onChange={(event) => setNewPassword(event.target.value)}
+            type="password"
+            value={newPassword}
+          />
+        </label>
 
-          <div className="grid grid-cols-1 gap-2 rounded-md border bg-secondary p-3 sm:grid-cols-2">
-            {conditions.map((condition) => (
-              <div
-                className={cn(
-                  'flex items-center gap-2 text-xs',
-                  condition.valid ? 'text-[#007a78]' : 'text-muted-foreground',
-                )}
-                key={condition.label}
-              >
-                <CheckCircle2 className="size-4 shrink-0" />
-                {condition.label}
-              </div>
-            ))}
-          </div>
+        <div className="grid grid-cols-1 gap-2 rounded-md border bg-secondary p-3 sm:grid-cols-2">
+          {conditions.map((condition) => (
+            <div
+              className={cn(
+                'flex items-center gap-2 text-xs',
+                condition.valid ? 'text-[#007a78]' : 'text-muted-foreground',
+              )}
+              key={condition.label}
+            >
+              <CheckCircle2 className="size-4 shrink-0" />
+              {condition.label}
+            </div>
+          ))}
+        </div>
 
-          <label className="grid gap-2 text-sm font-medium">
-            Confirmar contrasena
-            <input
-              autoComplete="new-password"
-              className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none transition-colors focus-visible:border-[#00afaa] focus-visible:ring-2 focus-visible:ring-[#00afaa]/20"
-              onChange={(event) => setConfirmation(event.target.value)}
-              type="password"
-              value={confirmation}
-            />
-          </label>
+        <label className="grid gap-2 text-sm font-medium">
+          Confirmar contrasena
+          <input
+            autoComplete="new-password"
+            className="h-11 rounded-md border bg-background px-3 text-sm font-normal outline-none transition-colors focus-visible:border-[#00afaa] focus-visible:ring-2 focus-visible:ring-[#00afaa]/20"
+            onChange={(event) => setConfirmation(event.target.value)}
+            type="password"
+            value={confirmation}
+          />
+        </label>
 
-          {error ? (
-            <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>
-          ) : null}
+        {error ? (
+          <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</p>
+        ) : null}
 
-          <Button className="bg-[#061b38] hover:bg-[#0a1f44]" disabled={submitting} type="submit">
-            <ShieldCheck />
-            {submitting ? 'Guardando...' : 'Guardar contrasena'}
-          </Button>
-          <Button onClick={onLogout} type="button" variant="outline">
-            <LogOut />
-            Cerrar sesion
-          </Button>
+        <Button className="bg-[#061b38] hover:bg-[#0a1f44]" disabled={submitting} type="submit">
+          <ShieldCheck />
+          {submitting ? 'Guardando...' : 'Guardar contrasena'}
+        </Button>
+        <Button onClick={onLogout} type="button" variant="outline">
+          <LogOut />
+          Cerrar sesion
+        </Button>
       </form>
     </AuthShell>
   );
@@ -944,6 +1181,7 @@ function UsersView({
   request: AuthenticatedRequest;
 }) {
   const queryClient = useQueryClient();
+  const workspace = useModuleWorkspace();
   const [searchTerm, setSearchTerm] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [formState, setFormState] = useState<UserFormState>(emptyUserForm);
@@ -996,6 +1234,12 @@ function UsersView({
     setFormState(emptyUserForm);
     setFormError('');
     setFormSuccess('');
+    workspace.showList();
+  }
+
+  function startNew() {
+    resetForm();
+    workspace.showForm();
   }
 
   function handleEdit(user: UserRow) {
@@ -1012,6 +1256,7 @@ function UsersView({
     });
     setFormError('');
     setFormSuccess('');
+    workspace.showForm();
   }
 
   async function handleDelete(user: UserRow) {
@@ -1090,7 +1335,7 @@ function UsersView({
             <span className="text-muted-foreground">Rol actual</span>
             <span className="font-semibold">{currentRole}</span>
           </div>
-          <Button onClick={resetForm} variant="outline">
+          <Button onClick={startNew} variant="outline">
             <UserPlus />
             Nuevo usuario
           </Button>
@@ -1128,8 +1373,36 @@ function UsersView({
         />
       </section>
 
-      <section className="mt-6 grid gap-4 xl:grid-cols-[360px_1fr]">
-        <form className="rounded-md border bg-card p-4 shadow-sm" onSubmit={handleSubmit}>
+      {formError && workspace.pane === 'list' ? (
+        <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {formError}
+        </p>
+      ) : null}
+      {formSuccess ? (
+        <p
+          role="status"
+          className="mt-5 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800"
+        >
+          {formSuccess}
+        </p>
+      ) : null}
+      <div id={workspace.anchorId} className="scroll-mt-20">
+        <ModuleWorkspaceTabs
+          pane={workspace.pane}
+          onShowList={workspace.showList}
+          onShowForm={workspace.showForm}
+          formLabel={isEditing ? 'Editar' : 'Nuevo'}
+        />
+      </div>
+      <section
+        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
+        data-mobile-pane={workspace.pane}
+      >
+        <form
+          data-pane="form"
+          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
+          onSubmit={handleSubmit}
+        >
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold tracking-normal">
@@ -1216,12 +1489,6 @@ function UsersView({
               </p>
             ) : null}
 
-            {formSuccess ? (
-              <p className="rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800">
-                {formSuccess}
-              </p>
-            ) : null}
-
             <Button disabled={!canManageUsers || saveUserMutation.isPending} type="submit">
               {isEditing ? <Edit3 /> : <UserPlus />}
               {saveUserMutation.isPending
@@ -1233,7 +1500,10 @@ function UsersView({
           </div>
         </form>
 
-        <section className="overflow-hidden rounded-md border bg-card shadow-sm">
+        <section
+          data-pane="list"
+          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
+        >
           <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold tracking-normal">Directorio de usuarios</h2>
@@ -1252,7 +1522,47 @@ function UsersView({
             </label>
           </div>
 
-          <div className="overflow-x-auto">
+          <RecordCards
+            items={filteredUsers}
+            getKey={(user) => user.id}
+            title={(user) => user.name}
+            subtitle={(user) => user.email}
+            fields={[
+              { label: 'Rol', render: (user) => user.role },
+              { label: 'Estado', render: (user) => user.status },
+              {
+                label: 'Acceso',
+                render: (user) =>
+                  user.essential
+                    ? 'Administrador esencial'
+                    : user.mustChangePassword
+                      ? 'Primer acceso pendiente'
+                      : 'Habilitado',
+              },
+            ]}
+            actions={(user) => (
+              <>
+                <Button
+                  disabled={!canManageUsers || user.essential}
+                  onClick={() => handleEdit(user)}
+                  type="button"
+                  variant="outline"
+                >
+                  <Edit3 /> Editar
+                </Button>
+                <Button
+                  disabled={!canManageUsers || user.essential || deleteUserMutation.isPending}
+                  onClick={() => void handleDelete(user)}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2 /> Eliminar
+                </Button>
+              </>
+            )}
+            emptyMessage="No se encontraron usuarios."
+          />
+          <div className="hidden overflow-x-auto xl:block">
             <table className="w-full min-w-[780px] text-sm">
               <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
                 <tr>
@@ -1336,6 +1646,2074 @@ function UsersView({
                   <tr>
                     <td className="px-4 py-10 text-center text-muted-foreground" colSpan={5}>
                       No se encontraron usuarios.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </>
+  );
+}
+
+function TowerIpsView({ request }: { request: AuthenticatedRequest }) {
+  const queryClient = useQueryClient();
+  const workspace = useModuleWorkspace();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<TowerIpFormState>(emptyTowerIpForm);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+  const ipsQuery = useQuery({
+    queryKey: ['tower-ips'],
+    queryFn: () => request<ApiTowerIp[]>('/tower-ips'),
+  });
+  const saveMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string | null; body: TowerIpFormState }) =>
+      request<ApiTowerIp>(id ? `/tower-ips/${id}` : '/tower-ips', {
+        method: id ? 'PATCH' : 'POST',
+        body: JSON.stringify({
+          ...body,
+          ip: body.ip.trim(),
+          office: body.office.trim(),
+          location: body.location.trim(),
+          responsible: body.responsible.trim(),
+          observations: body.observations.trim() || undefined,
+        }),
+      }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['tower-ips'] }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => request<void>(`/tower-ips/${id}`, { method: 'DELETE' }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['tower-ips'] }),
+  });
+  const ips = ipsQuery.data ?? [];
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es');
+  const filteredIps = ips.filter((item) =>
+    [item.ip, item.office, item.location, item.responsible].some((value) =>
+      value.toLocaleLowerCase('es').includes(normalizedSearch),
+    ),
+  );
+
+  function resetForm() {
+    setEditingId(null);
+    setForm(emptyTowerIpForm);
+    setFormError('');
+    setFormSuccess('');
+    workspace.showList();
+  }
+
+  function startNew() {
+    resetForm();
+    workspace.showForm();
+  }
+
+  function editIp(item: ApiTowerIp) {
+    setEditingId(item.id);
+    setForm({
+      ip: item.ip,
+      office: item.office,
+      location: item.location,
+      responsible: item.responsible,
+      antenna: item.antenna,
+      observations: item.observations ?? '',
+    });
+    setFormError('');
+    setFormSuccess('');
+    workspace.showForm();
+  }
+
+  async function removeIp(item: ApiTowerIp) {
+    if (!window.confirm(`Dar de baja la IP ${item.ip}?`)) return;
+    try {
+      await deleteMutation.mutateAsync(item.id);
+      if (editingId === item.id) resetForm();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible dar de baja la IP.');
+    }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      !form.ip.trim() ||
+      !form.office.trim() ||
+      !form.location.trim() ||
+      !form.responsible.trim()
+    ) {
+      setFormError('IP, consultorio, ubicación y responsable son obligatorios.');
+      return;
+    }
+    try {
+      const wasEditing = Boolean(editingId);
+      await saveMutation.mutateAsync({ id: editingId, body: form });
+      resetForm();
+      setFormSuccess(wasEditing ? 'IP actualizada.' : 'IP registrada.');
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible guardar la IP.');
+    }
+  }
+
+  return (
+    <>
+      <header className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal text-foreground">
+            IPs Torre Médica
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Registro de direccionamiento, consultorios, ubicación y antenas.
+          </p>
+        </div>
+        <Button onClick={startNew} variant="outline">
+          <Plus />
+          Nueva IP
+        </Button>
+      </header>
+      {ipsQuery.isLoading ? (
+        <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
+          Cargando IPs...
+        </p>
+      ) : null}
+      {ipsQuery.error ? (
+        <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
+          {ipsQuery.error.message}
+        </p>
+      ) : null}
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <UserMetric icon={Network} label="IPs registradas" value={ips.length} />
+        <UserMetric
+          icon={CheckCircle2}
+          label="Con antena"
+          value={ips.filter((item) => item.antenna).length}
+        />
+        <UserMetric
+          icon={Building2}
+          label="Consultorios"
+          value={new Set(ips.map((item) => item.office)).size}
+        />
+        <UserMetric
+          icon={Users}
+          label="Responsables"
+          value={new Set(ips.map((item) => item.responsible)).size}
+        />
+      </section>
+      {formError && workspace.pane === 'list' ? (
+        <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {formError}
+        </p>
+      ) : null}
+      {formSuccess ? (
+        <p
+          role="status"
+          className="mt-5 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800"
+        >
+          {formSuccess}
+        </p>
+      ) : null}
+      <div id={workspace.anchorId} className="scroll-mt-20">
+        <ModuleWorkspaceTabs
+          pane={workspace.pane}
+          onShowList={workspace.showList}
+          onShowForm={workspace.showForm}
+          formLabel={editingId ? 'Editar' : 'Nuevo'}
+        />
+      </div>
+      <section
+        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
+        data-mobile-pane={workspace.pane}
+      >
+        <form
+          data-pane="form"
+          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
+          onSubmit={submit}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">{editingId ? 'Editar IP' : 'Nueva IP'}</h2>
+              <p className="text-sm text-muted-foreground">
+                El usuario actual se guarda automáticamente como configuró.
+              </p>
+            </div>
+            {editingId ? (
+              <Button
+                aria-label="Cancelar edición"
+                onClick={resetForm}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <X />
+              </Button>
+            ) : null}
+          </div>
+          <div className="mt-4 grid gap-4">
+            <label className="grid gap-2 text-sm font-medium">
+              IP
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => setForm((current) => ({ ...current, ip: event.target.value }))}
+                placeholder="192.168.10.25"
+                value={form.ip}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Consultorio
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, office: event.target.value }))
+                }
+                value={form.office}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Ubicación
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, location: event.target.value }))
+                }
+                value={form.location}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Responsable
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, responsible: event.target.value }))
+                }
+                value={form.responsible}
+              />
+            </label>
+            <label className="flex items-center gap-3 rounded-md border bg-background p-3 text-sm font-medium">
+              <input
+                checked={form.antenna}
+                className="size-4 accent-[#00afaa]"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, antenna: event.target.checked }))
+                }
+                type="checkbox"
+              />
+              Cuenta con antena
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Observaciones
+              <span className="text-xs font-normal text-muted-foreground">
+                Se almacenan en la base de datos y no se muestran en la tabla.
+              </span>
+              <textarea
+                className="min-h-24 rounded-md border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, observations: event.target.value }))
+                }
+                value={form.observations}
+              />
+            </label>
+            {formError ? (
+              <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {formError}
+              </p>
+            ) : null}
+            <Button disabled={saveMutation.isPending} type="submit">
+              {saveMutation.isPending ? (
+                'Guardando...'
+              ) : editingId ? (
+                <>
+                  <Edit3 />
+                  Guardar cambios
+                </>
+              ) : (
+                <>
+                  <Plus />
+                  Registrar IP
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+        <section
+          data-pane="list"
+          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
+        >
+          <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Directorio de IPs</h2>
+              <p className="text-sm text-muted-foreground">
+                Observaciones y auditoría se conservan en la base de datos.
+              </p>
+            </div>
+            <label className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
+              <Search className="size-4 shrink-0 text-muted-foreground" />
+              <span className="sr-only">Buscar IPs</span>
+              <input
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Buscar IP, consultorio o responsable"
+                type="search"
+                value={searchTerm}
+              />
+            </label>
+          </div>
+          <RecordCards
+            items={filteredIps}
+            getKey={(item) => item.id}
+            title={(item) => item.ip}
+            subtitle={(item) => item.office}
+            fields={[
+              { label: 'Ubicación', render: (item) => item.location },
+              { label: 'Responsable', render: (item) => item.responsible },
+              { label: 'Antena', render: (item) => (item.antenna ? 'Sí' : 'No') },
+            ]}
+            actions={(item) => (
+              <>
+                <Button onClick={() => editIp(item)} type="button" variant="outline">
+                  <Edit3 /> Editar
+                </Button>
+                <Button
+                  disabled={deleteMutation.isPending}
+                  onClick={() => void removeIp(item)}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2 /> Eliminar
+                </Button>
+              </>
+            )}
+            emptyMessage="No se encontraron IPs."
+          />
+          <div className="hidden overflow-x-auto xl:block">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">IP</th>
+                  <th className="px-4 py-3 font-semibold">Consultorio</th>
+                  <th className="px-4 py-3 font-semibold">Ubicación</th>
+                  <th className="px-4 py-3 font-semibold">Responsable</th>
+                  <th className="px-4 py-3 font-semibold">Antena</th>
+                  <th className="px-4 py-3 text-right font-semibold">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredIps.map((item) => (
+                  <tr
+                    className={editingId === item.id ? 'bg-secondary/70' : undefined}
+                    key={item.id}
+                  >
+                    <td className="px-4 py-3 font-mono font-medium">{item.ip}</td>
+                    <td className="px-4 py-3">{item.office}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{item.location}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{item.responsible}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'inline-flex rounded-md border px-2 py-1 text-xs font-semibold',
+                          item.antenna
+                            ? 'border-teal-200 bg-teal-50 text-teal-800'
+                            : 'bg-background text-muted-foreground',
+                        )}
+                      >
+                        {item.antenna ? 'Sí' : 'No'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          aria-label={`Editar ${item.ip}`}
+                          onClick={() => editIp(item)}
+                          size="icon"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Edit3 />
+                        </Button>
+                        <Button
+                          aria-label={`Eliminar ${item.ip}`}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => void removeIp(item)}
+                          size="icon"
+                          type="button"
+                          variant="destructive"
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredIps.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={6}>
+                      No se encontraron IPs.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </>
+  );
+}
+
+function EmailRequestsView({ request }: { request: AuthenticatedRequest }) {
+  const queryClient = useQueryClient();
+  const workspace = useModuleWorkspace();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<EmailRequestFormState>(emptyEmailRequestForm);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+  const requestsQuery = useQuery({
+    queryKey: ['email-requests'],
+    queryFn: () => request<ApiEmailRequest[]>('/email-requests'),
+  });
+  const saveMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string | null; body: EmailRequestFormState }) =>
+      request<ApiEmailRequest>(id ? `/email-requests/${id}` : '/email-requests', {
+        method: id ? 'PATCH' : 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['email-requests'] }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => request<void>(`/email-requests/${id}`, { method: 'DELETE' }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['email-requests'] }),
+  });
+  const generateMutation = useMutation({
+    mutationFn: (id: string) =>
+      request<{ fileName: string; contentType: string; documentBase64: string }>(
+        `/email-requests/${id}/generate`,
+        { method: 'POST' },
+      ),
+    onSuccess: async (generated) => {
+      const bytes = Uint8Array.from(window.atob(generated.documentBase64), (character) =>
+        character.charCodeAt(0),
+      );
+      const blob = new Blob([bytes], { type: generated.contentType });
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement('a');
+      link.href = url;
+      link.download = generated.fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+      await queryClient.invalidateQueries({ queryKey: ['email-requests'] });
+    },
+  });
+  const templateMutation = useMutation({
+    mutationFn: (file: File) => {
+      const data = new FormData();
+      data.append('template', file);
+      return request<{ message: string }>('/email-requests/template', {
+        method: 'POST',
+        body: data,
+      });
+    },
+    onSuccess: (result) => setFormSuccess(result.message),
+  });
+  const templateInputRef = useRef<HTMLInputElement>(null);
+  const requests = requestsQuery.data ?? [];
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es');
+  const filteredRequests = requests.filter((item) =>
+    [item.fullName, item.collaboratorNo, item.area, item.suggestedEmail].some((value) =>
+      value.toLocaleLowerCase('es').includes(normalizedSearch),
+    ),
+  );
+
+  function resetForm() {
+    setEditingId(null);
+    setForm(emptyEmailRequestForm);
+    setFormError('');
+    setFormSuccess('');
+    workspace.showList();
+  }
+
+  function startNew() {
+    resetForm();
+    workspace.showForm();
+  }
+
+  function editRequest(item: ApiEmailRequest) {
+    setEditingId(item.id);
+    setForm({
+      fullName: item.fullName,
+      collaboratorNo: item.collaboratorNo,
+      area: item.area,
+      position: item.position,
+      justification: item.justification,
+      suggestedEmail: item.suggestedEmail,
+      service: item.service,
+      requestingBoss: item.requestingBoss,
+      areaDirector: item.areaDirector,
+      tiResponsible: item.tiResponsible,
+    });
+    setFormError('');
+    setFormSuccess('');
+    workspace.showForm();
+  }
+
+  async function removeRequest(item: ApiEmailRequest) {
+    if (!window.confirm(`Dar de baja la solicitud de ${item.fullName}?`)) return;
+    try {
+      await deleteMutation.mutateAsync(item.id);
+      if (editingId === item.id) resetForm();
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : 'No fue posible dar de baja la solicitud.',
+      );
+    }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const required = [
+      form.fullName,
+      form.collaboratorNo,
+      form.area,
+      form.position,
+      form.justification,
+      form.suggestedEmail,
+      form.service,
+      form.requestingBoss,
+      form.areaDirector,
+      form.tiResponsible,
+    ];
+    if (required.some((value) => !value.trim())) {
+      setFormError('Completa todos los campos de la solicitud.');
+      return;
+    }
+    try {
+      const wasEditing = Boolean(editingId);
+      await saveMutation.mutateAsync({ id: editingId, body: form });
+      resetForm();
+      setFormSuccess(wasEditing ? 'Solicitud actualizada.' : 'Solicitud registrada.');
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible guardar la solicitud.');
+    }
+  }
+
+  function updateField<Key extends keyof EmailRequestFormState>(
+    key: Key,
+    value: EmailRequestFormState[Key],
+  ) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function downloadCurrentTemplate() {
+    try {
+      const template = await request<{
+        fileName: string;
+        contentType: string;
+        documentBase64: string;
+      }>('/email-requests/template');
+      const bytes = Uint8Array.from(window.atob(template.documentBase64), (character) =>
+        character.charCodeAt(0),
+      );
+      const url = URL.createObjectURL(new Blob([bytes], { type: template.contentType }));
+      const link = window.document.createElement('a');
+      link.href = url;
+      link.download = template.fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : 'No fue posible descargar la plantilla.',
+      );
+    }
+  }
+
+  function selectTemplate(file: File | undefined) {
+    if (!file) return;
+    setFormError('');
+    templateMutation.mutate(file);
+  }
+
+  return (
+    <>
+      <header className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal text-foreground">Servicios TI</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Solicitudes de generación de correo institucional.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => void downloadCurrentTemplate()} variant="outline">
+            <Download />
+            Descargar plantilla actual
+          </Button>
+          <input
+            accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            className="hidden"
+            onChange={(event) => {
+              selectTemplate(event.target.files?.[0]);
+              event.currentTarget.value = '';
+            }}
+            ref={templateInputRef}
+            type="file"
+          />
+          <Button
+            disabled={templateMutation.isPending}
+            onClick={() => templateInputRef.current?.click()}
+            variant="outline"
+          >
+            <FileText />
+            {templateMutation.isPending ? 'Reemplazando...' : 'Reemplazar plantilla'}
+          </Button>
+          <Button onClick={startNew} variant="outline">
+            <Plus />
+            Nueva solicitud
+          </Button>
+        </div>
+      </header>
+      {requestsQuery.isLoading ? (
+        <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
+          Cargando solicitudes...
+        </p>
+      ) : null}
+      {requestsQuery.error ? (
+        <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
+          {requestsQuery.error.message}
+        </p>
+      ) : null}
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <UserMetric icon={FileText} label="Solicitudes registradas" value={requests.length} />
+        <UserMetric
+          icon={CheckCircle2}
+          label="Formatos generados"
+          value={requests.filter((item) => item.lastGeneratedAt).length}
+        />
+        <UserMetric
+          icon={Users}
+          label="Colaboradores"
+          value={new Set(requests.map((item) => item.collaboratorNo)).size}
+        />
+      </section>
+      {formError && workspace.pane === 'list' ? (
+        <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {formError}
+        </p>
+      ) : null}
+      {formSuccess ? (
+        <p
+          role="status"
+          className="mt-5 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800"
+        >
+          {formSuccess}
+        </p>
+      ) : null}
+      <div id={workspace.anchorId} className="scroll-mt-20">
+        <ModuleWorkspaceTabs
+          pane={workspace.pane}
+          onShowList={workspace.showList}
+          onShowForm={workspace.showForm}
+          formLabel={editingId ? 'Editar' : 'Nuevo'}
+        />
+      </div>
+      <section
+        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(320px,430px)_minmax(0,1fr)]"
+        data-mobile-pane={workspace.pane}
+      >
+        <form
+          data-pane="form"
+          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
+          onSubmit={submit}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">
+                {editingId ? 'Editar solicitud' : 'Nueva solicitud'}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                La fecha se registra automáticamente al guardar.
+              </p>
+            </div>
+            {editingId ? (
+              <Button
+                aria-label="Cancelar edición"
+                onClick={resetForm}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <X />
+              </Button>
+            ) : null}
+          </div>
+          <div className="mt-4 grid gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium">
+                Nombre completo
+                <input
+                  className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => updateField('fullName', event.target.value)}
+                  value={form.fullName}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                No. colaborador
+                <input
+                  className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => updateField('collaboratorNo', event.target.value)}
+                  value={form.collaboratorNo}
+                />
+              </label>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium">
+                Área
+                <input
+                  className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => updateField('area', event.target.value)}
+                  value={form.area}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Cargo
+                <input
+                  className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => updateField('position', event.target.value)}
+                  value={form.position}
+                />
+              </label>
+            </div>
+            <label className="grid gap-2 text-sm font-medium">
+              Justificación
+              <textarea
+                className="min-h-24 rounded-md border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => updateField('justification', event.target.value)}
+                value={form.justification}
+              />
+            </label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium">
+                Correo sugerido
+                <input
+                  className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => updateField('suggestedEmail', event.target.value)}
+                  value={form.suggestedEmail}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Servicio
+                <input
+                  className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => updateField('service', event.target.value)}
+                  value={form.service}
+                />
+              </label>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium">
+                Jefe solicitante
+                <input
+                  className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => updateField('requestingBoss', event.target.value)}
+                  value={form.requestingBoss}
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Director del área
+                <input
+                  className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => updateField('areaDirector', event.target.value)}
+                  value={form.areaDirector}
+                />
+              </label>
+            </div>
+            <label className="grid gap-2 text-sm font-medium">
+              Responsable TI
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => updateField('tiResponsible', event.target.value)}
+                value={form.tiResponsible}
+              />
+            </label>
+            {formError ? (
+              <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {formError}
+              </p>
+            ) : null}
+            <Button disabled={saveMutation.isPending} type="submit">
+              {saveMutation.isPending ? (
+                'Guardando...'
+              ) : editingId ? (
+                <>
+                  <Edit3 />
+                  Guardar cambios
+                </>
+              ) : (
+                <>
+                  <Plus />
+                  Registrar solicitud
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+        <section
+          data-pane="list"
+          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
+        >
+          <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Solicitudes de correo</h2>
+              <p className="text-sm text-muted-foreground">{filteredRequests.length} registro(s)</p>
+            </div>
+            <label className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
+              <Search className="size-4 shrink-0 text-muted-foreground" />
+              <span className="sr-only">Buscar solicitudes</span>
+              <input
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Buscar nombre, colaborador o área"
+                type="search"
+                value={searchTerm}
+              />
+            </label>
+          </div>
+          <RecordCards
+            items={filteredRequests}
+            getKey={(item) => item.id}
+            title={(item) => item.fullName}
+            subtitle={(item) => item.suggestedEmail}
+            fields={[
+              { label: 'Colaborador', render: (item) => item.collaboratorNo },
+              { label: 'Área / cargo', render: (item) => `${item.area} · ${item.position}` },
+              { label: 'Servicio', render: (item) => item.service },
+              {
+                label: 'Fecha',
+                render: (item) => new Date(item.requestDate).toLocaleDateString('es-MX'),
+              },
+            ]}
+            actions={(item) => (
+              <>
+                <Button
+                  disabled={generateMutation.isPending}
+                  onClick={() => void generateMutation.mutateAsync(item.id)}
+                  type="button"
+                  variant="outline"
+                >
+                  <Download /> Word
+                </Button>
+                <Button onClick={() => editRequest(item)} type="button" variant="outline">
+                  <Edit3 /> Editar
+                </Button>
+                <Button
+                  disabled={deleteMutation.isPending}
+                  onClick={() => void removeRequest(item)}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2 /> Eliminar
+                </Button>
+              </>
+            )}
+            emptyMessage="No se encontraron solicitudes."
+          />
+          <div className="hidden overflow-x-auto xl:block">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Solicitante</th>
+                  <th className="px-4 py-3 font-semibold">Colaborador</th>
+                  <th className="px-4 py-3 font-semibold">Área / Cargo</th>
+                  <th className="px-4 py-3 font-semibold">Servicio</th>
+                  <th className="px-4 py-3 font-semibold">Fecha</th>
+                  <th className="px-4 py-3 text-right font-semibold">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredRequests.map((item) => (
+                  <tr
+                    className={editingId === item.id ? 'bg-secondary/70' : undefined}
+                    key={item.id}
+                  >
+                    <td className="px-4 py-3 font-medium">
+                      <div>{item.fullName}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {item.suggestedEmail}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">{item.collaboratorNo}</td>
+                    <td className="px-4 py-3">
+                      <div>{item.area}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{item.position}</div>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{item.service}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {new Date(item.requestDate).toLocaleDateString('es-MX')}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          aria-label={`Generar formato de ${item.fullName}`}
+                          disabled={generateMutation.isPending}
+                          onClick={() => void generateMutation.mutateAsync(item.id)}
+                          size="icon"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Download />
+                        </Button>
+                        <Button
+                          aria-label={`Editar solicitud de ${item.fullName}`}
+                          onClick={() => editRequest(item)}
+                          size="icon"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Edit3 />
+                        </Button>
+                        <Button
+                          aria-label={`Eliminar solicitud de ${item.fullName}`}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => void removeRequest(item)}
+                          size="icon"
+                          type="button"
+                          variant="destructive"
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredRequests.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={6}>
+                      No se encontraron solicitudes.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </>
+  );
+}
+
+function AreasView({ request }: { request: AuthenticatedRequest }) {
+  const queryClient = useQueryClient();
+  const workspace = useModuleWorkspace();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<AreaFormState>(emptyAreaForm);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+  const areasQuery = useQuery({ queryKey: ['areas'], queryFn: () => request<ApiArea[]>('/areas') });
+  const saveMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string | null; body: AreaFormState }) =>
+      request<ApiArea>(id ? `/areas/${id}` : '/areas', {
+        method: id ? 'PATCH' : 'POST',
+        body: JSON.stringify({
+          name: body.name.trim(),
+          description: body.description.trim() || undefined,
+        }),
+      }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['areas'] }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => request<void>(`/areas/${id}`, { method: 'DELETE' }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['areas'] }),
+  });
+  const areas = areasQuery.data ?? [];
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es');
+  const filteredAreas = areas.filter((area) =>
+    [area.name, area.description ?? ''].some((value) =>
+      value.toLocaleLowerCase('es').includes(normalizedSearch),
+    ),
+  );
+
+  function resetForm() {
+    setEditingId(null);
+    setForm(emptyAreaForm);
+    setFormError('');
+    setFormSuccess('');
+    workspace.showList();
+  }
+
+  function startNew() {
+    resetForm();
+    workspace.showForm();
+  }
+
+  function editArea(area: ApiArea) {
+    setEditingId(area.id);
+    setForm({ name: area.name, description: area.description ?? '' });
+    setFormError('');
+    setFormSuccess('');
+    workspace.showForm();
+  }
+
+  async function removeArea(area: ApiArea) {
+    if (!window.confirm(`Dar de baja el área ${area.name}?`)) return;
+    try {
+      await deleteMutation.mutateAsync(area.id);
+      if (editingId === area.id) resetForm();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible dar de baja el área.');
+    }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!form.name.trim()) {
+      setFormError('El nombre del área es obligatorio.');
+      return;
+    }
+    try {
+      const wasEditing = Boolean(editingId);
+      await saveMutation.mutateAsync({ id: editingId, body: form });
+      resetForm();
+      setFormSuccess(wasEditing ? 'Área actualizada.' : 'Área registrada.');
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible guardar el área.');
+    }
+  }
+
+  return (
+    <>
+      <header className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal text-foreground">Áreas</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Catálogo de áreas de la organización y trazabilidad de cambios.
+          </p>
+        </div>
+        <Button onClick={startNew} variant="outline">
+          <Plus />
+          Nueva área
+        </Button>
+      </header>
+
+      {areasQuery.isLoading ? (
+        <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
+          Cargando áreas...
+        </p>
+      ) : null}
+      {areasQuery.error ? (
+        <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
+          {areasQuery.error.message}
+        </p>
+      ) : null}
+
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <UserMetric icon={Building2} label="Áreas registradas" value={areas.length} />
+        <UserMetric
+          icon={CheckCircle2}
+          label="Con descripción"
+          value={areas.filter((area) => Boolean(area.description)).length}
+        />
+        <UserMetric
+          icon={Users}
+          label="Áreas sin descripción"
+          value={areas.filter((area) => !area.description).length}
+        />
+      </section>
+
+      {formError && workspace.pane === 'list' ? (
+        <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {formError}
+        </p>
+      ) : null}
+      {formSuccess ? (
+        <p
+          role="status"
+          className="mt-5 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800"
+        >
+          {formSuccess}
+        </p>
+      ) : null}
+      <div id={workspace.anchorId} className="scroll-mt-20">
+        <ModuleWorkspaceTabs
+          pane={workspace.pane}
+          onShowList={workspace.showList}
+          onShowForm={workspace.showForm}
+          formLabel={editingId ? 'Editar' : 'Nuevo'}
+        />
+      </div>
+      <section
+        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
+        data-mobile-pane={workspace.pane}
+      >
+        <form
+          data-pane="form"
+          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
+          onSubmit={submit}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">
+                {editingId ? 'Editar área' : 'Nueva área'}
+              </h2>
+              <p className="text-sm text-muted-foreground">La descripción es opcional.</p>
+            </div>
+            {editingId ? (
+              <Button
+                aria-label="Cancelar edición"
+                onClick={resetForm}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <X />
+              </Button>
+            ) : null}
+          </div>
+          <div className="mt-4 grid gap-4">
+            <label className="grid gap-2 text-sm font-medium">
+              Nombre de área
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, name: event.target.value }))
+                }
+                value={form.name}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Descripción<span className="text-xs font-normal text-muted-foreground">Opcional</span>
+              <textarea
+                className="min-h-28 rounded-md border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, description: event.target.value }))
+                }
+                value={form.description}
+              />
+            </label>
+            {formError ? (
+              <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {formError}
+              </p>
+            ) : null}
+            <Button disabled={saveMutation.isPending} type="submit">
+              {saveMutation.isPending ? (
+                'Guardando...'
+              ) : editingId ? (
+                <>
+                  <Edit3 />
+                  Guardar cambios
+                </>
+              ) : (
+                <>
+                  <Plus />
+                  Registrar área
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+
+        <section
+          data-pane="list"
+          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
+        >
+          <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Directorio de áreas</h2>
+              <p className="text-sm text-muted-foreground">{filteredAreas.length} registro(s)</p>
+            </div>
+            <label className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
+              <Search className="size-4 shrink-0 text-muted-foreground" />
+              <span className="sr-only">Buscar áreas</span>
+              <input
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Buscar área o descripción"
+                type="search"
+                value={searchTerm}
+              />
+            </label>
+          </div>
+          <RecordCards
+            items={filteredAreas}
+            getKey={(area) => area.id}
+            title={(area) => area.name}
+            fields={[
+              { label: 'Descripción', render: (area) => area.description || 'Sin descripción' },
+              { label: 'Creado por', render: (area) => area.createdBy.name },
+              { label: 'Editado por', render: (area) => area.updatedBy.name },
+            ]}
+            actions={(area) => (
+              <>
+                <Button onClick={() => editArea(area)} type="button" variant="outline">
+                  <Edit3 /> Editar
+                </Button>
+                <Button
+                  disabled={deleteMutation.isPending}
+                  onClick={() => void removeArea(area)}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2 /> Eliminar
+                </Button>
+              </>
+            )}
+            emptyMessage="No se encontraron áreas."
+          />
+          <div className="hidden overflow-x-auto xl:block">
+            <table className="w-full min-w-[780px] text-sm">
+              <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Nombre de área</th>
+                  <th className="px-4 py-3 font-semibold">Descripción</th>
+                  <th className="px-4 py-3 font-semibold">Creado por</th>
+                  <th className="px-4 py-3 font-semibold">Editado por</th>
+                  <th className="px-4 py-3 text-right font-semibold">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredAreas.map((area) => (
+                  <tr
+                    className={editingId === area.id ? 'bg-secondary/70' : undefined}
+                    key={area.id}
+                  >
+                    <td className="px-4 py-3 font-medium">{area.name}</td>
+                    <td className="max-w-sm px-4 py-3 text-muted-foreground">
+                      {area.description || 'Sin descripción'}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{area.createdBy.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{area.updatedBy.name}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          aria-label={`Editar ${area.name}`}
+                          onClick={() => editArea(area)}
+                          size="icon"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Edit3 />
+                        </Button>
+                        <Button
+                          aria-label={`Eliminar ${area.name}`}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => void removeArea(area)}
+                          size="icon"
+                          type="button"
+                          variant="destructive"
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredAreas.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={5}>
+                      No se encontraron áreas.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </>
+  );
+}
+
+function TonersView({ request }: { request: AuthenticatedRequest }) {
+  const queryClient = useQueryClient();
+  const workspace = useModuleWorkspace();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<TonerFormState>(emptyTonerForm);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+  const tonersQuery = useQuery({
+    queryKey: ['toners'],
+    queryFn: () => request<ApiToner[]>('/toners'),
+  });
+  const printersQuery = useQuery({
+    queryKey: ['printers'],
+    queryFn: () => request<ApiPrinter[]>('/printers'),
+  });
+  const saveMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string | null; body: TonerFormState }) =>
+      request<ApiToner>(id ? `/toners/${id}` : '/toners', {
+        method: id ? 'PATCH' : 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['toners'] }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => request<void>(`/toners/${id}`, { method: 'DELETE' }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['toners'] }),
+  });
+  const toners = tonersQuery.data ?? [];
+  const printers = printersQuery.data ?? [];
+  const filteredToners = toners.filter((toner) =>
+    [
+      toner.model,
+      toner.color,
+      toner.printer.model,
+      toner.printer.serialNumber,
+      toner.printer.area,
+    ].some((value) =>
+      value.toLocaleLowerCase('es').includes(searchTerm.trim().toLocaleLowerCase('es')),
+    ),
+  );
+
+  function resetForm() {
+    setEditingId(null);
+    setForm(emptyTonerForm);
+    setFormError('');
+    setFormSuccess('');
+    workspace.showList();
+  }
+
+  function startNew() {
+    resetForm();
+    workspace.showForm();
+  }
+
+  function editToner(toner: ApiToner) {
+    setEditingId(toner.id);
+    setForm({ model: toner.model, color: toner.color, printerId: toner.printerId });
+    setFormError('');
+    setFormSuccess('');
+    workspace.showForm();
+  }
+
+  async function removeToner(toner: ApiToner) {
+    if (!window.confirm(`Dar de baja el toner ${toner.model}?`)) return;
+    try {
+      await deleteMutation.mutateAsync(toner.id);
+      if (editingId === toner.id) resetForm();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible dar de baja el toner.');
+    }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!form.model.trim() || !form.color.trim() || !form.printerId) {
+      setFormError('Modelo, color e impresora son obligatorios.');
+      return;
+    }
+    try {
+      const wasEditing = Boolean(editingId);
+      await saveMutation.mutateAsync({
+        id: editingId,
+        body: { ...form, model: form.model.trim(), color: form.color.trim() },
+      });
+      resetForm();
+      setFormSuccess(wasEditing ? 'Toner actualizado.' : 'Toner registrado.');
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible guardar el toner.');
+    }
+  }
+
+  return (
+    <>
+      <header className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal text-foreground">Toners</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Catálogo de toners compatibles con las impresoras registradas.
+          </p>
+        </div>
+        <Button onClick={startNew} variant="outline">
+          <Plus />
+          Nuevo toner
+        </Button>
+      </header>
+      {tonersQuery.isLoading || printersQuery.isLoading ? (
+        <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
+          Cargando toners...
+        </p>
+      ) : null}
+      {tonersQuery.error || printersQuery.error ? (
+        <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
+          {tonersQuery.error?.message ?? printersQuery.error?.message}
+        </p>
+      ) : null}
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <UserMetric icon={Boxes} label="Toners registrados" value={toners.length} />
+        <UserMetric
+          icon={Printer}
+          label="Impresoras con toner"
+          value={new Set(toners.map((toner) => toner.printerId)).size}
+        />
+        <UserMetric
+          icon={CheckCircle2}
+          label="Colores registrados"
+          value={new Set(toners.map((toner) => toner.color.toLocaleLowerCase('es'))).size}
+        />
+      </section>
+      {formError && workspace.pane === 'list' ? (
+        <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {formError}
+        </p>
+      ) : null}
+      {formSuccess ? (
+        <p
+          role="status"
+          className="mt-5 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800"
+        >
+          {formSuccess}
+        </p>
+      ) : null}
+      <div id={workspace.anchorId} className="scroll-mt-20">
+        <ModuleWorkspaceTabs
+          pane={workspace.pane}
+          onShowList={workspace.showList}
+          onShowForm={workspace.showForm}
+          formLabel={editingId ? 'Editar' : 'Nuevo'}
+        />
+      </div>
+      <section
+        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
+        data-mobile-pane={workspace.pane}
+      >
+        <form
+          data-pane="form"
+          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
+          onSubmit={submit}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">
+                {editingId ? 'Editar toner' : 'Nuevo toner'}
+              </h2>
+              <p className="text-sm text-muted-foreground">Selecciona la impresora compatible.</p>
+            </div>
+            {editingId ? (
+              <Button
+                aria-label="Cancelar edición"
+                onClick={resetForm}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <X />
+              </Button>
+            ) : null}
+          </div>
+          <div className="mt-4 grid gap-4">
+            <label className="grid gap-2 text-sm font-medium">
+              Modelo
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, model: event.target.value }))
+                }
+                value={form.model}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Color
+              <select
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, color: event.target.value }))
+                }
+                value={form.color}
+              >
+                <option value="Negro">Negro</option>
+                <option value="Cian">Cian</option>
+                <option value="Magenta">Magenta</option>
+                <option value="Amarillo">Amarillo</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Impresora
+              <select
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, printerId: event.target.value }))
+                }
+                value={form.printerId}
+              >
+                <option value="">Selecciona una impresora</option>
+                {printers.map((printer) => (
+                  <option key={printer.id} value={printer.id}>
+                    {printer.model} · {printer.serialNumber} · {printer.area}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {printers.length === 0 ? (
+              <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Registra primero una impresora para asociar el toner.
+              </p>
+            ) : null}
+            {formError ? (
+              <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {formError}
+              </p>
+            ) : null}
+            <Button disabled={saveMutation.isPending || printers.length === 0} type="submit">
+              {saveMutation.isPending ? (
+                'Guardando...'
+              ) : editingId ? (
+                <>
+                  <Edit3 />
+                  Guardar cambios
+                </>
+              ) : (
+                <>
+                  <Plus />
+                  Registrar toner
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+        <section
+          data-pane="list"
+          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
+        >
+          <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Directorio de toners</h2>
+              <p className="text-sm text-muted-foreground">{filteredToners.length} registro(s)</p>
+            </div>
+            <label className="flex h-10 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
+              <Search className="size-4 shrink-0 text-muted-foreground" />
+              <span className="sr-only">Buscar toners</span>
+              <input
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Buscar modelo, color o impresora"
+                type="search"
+                value={searchTerm}
+              />
+            </label>
+          </div>
+          <RecordCards
+            items={filteredToners}
+            getKey={(toner) => toner.id}
+            title={(toner) => toner.model}
+            subtitle={(toner) => toner.color}
+            fields={[
+              {
+                label: 'Impresora',
+                render: (toner) => `${toner.printer.model} · ${toner.printer.serialNumber}`,
+              },
+              { label: 'Área', render: (toner) => toner.printer.area },
+              { label: 'Creado por', render: (toner) => toner.createdBy.name },
+              { label: 'Editado por', render: (toner) => toner.updatedBy.name },
+            ]}
+            actions={(toner) => (
+              <>
+                <Button onClick={() => editToner(toner)} type="button" variant="outline">
+                  <Edit3 /> Editar
+                </Button>
+                <Button
+                  disabled={deleteMutation.isPending}
+                  onClick={() => void removeToner(toner)}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2 /> Eliminar
+                </Button>
+              </>
+            )}
+            emptyMessage="No se encontraron toners."
+          />
+          <div className="hidden overflow-x-auto xl:block">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Modelo</th>
+                  <th className="px-4 py-3 font-semibold">Color</th>
+                  <th className="px-4 py-3 font-semibold">Impresora</th>
+                  <th className="px-4 py-3 font-semibold">Auditoría</th>
+                  <th className="px-4 py-3 text-right font-semibold">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredToners.map((toner) => (
+                  <tr
+                    className={editingId === toner.id ? 'bg-secondary/70' : undefined}
+                    key={toner.id}
+                  >
+                    <td className="px-4 py-3 font-medium">{toner.model}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex rounded-md border bg-background px-2 py-1 text-xs font-semibold">
+                        {toner.color}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>{toner.printer.model}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {toner.printer.serialNumber} · {toner.printer.area}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      <div>Creó: {toner.createdBy.name}</div>
+                      <div>Editó: {toner.updatedBy.name}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          aria-label={`Editar ${toner.model}`}
+                          onClick={() => editToner(toner)}
+                          size="icon"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Edit3 />
+                        </Button>
+                        <Button
+                          aria-label={`Eliminar ${toner.model}`}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => void removeToner(toner)}
+                          size="icon"
+                          type="button"
+                          variant="destructive"
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredToners.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={5}>
+                      No se encontraron toners.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </>
+  );
+}
+
+function PrintersView({ request }: { request: AuthenticatedRequest }) {
+  const queryClient = useQueryClient();
+  const workspace = useModuleWorkspace();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<PrinterFormState>(emptyPrinterForm);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+  const printersQuery = useQuery({
+    queryKey: ['printers'],
+    queryFn: () => request<ApiPrinter[]>('/printers'),
+  });
+  const saveMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string | null; body: PrinterFormState }) =>
+      request<ApiPrinter>(id ? `/printers/${id}` : '/printers', {
+        method: id ? 'PATCH' : 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['printers'] }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => request<void>(`/printers/${id}`, { method: 'DELETE' }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['printers'] }),
+  });
+  const printers = printersQuery.data ?? [];
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es');
+  const filteredPrinters = printers.filter((printer) =>
+    [printer.area, printer.model, printer.serialNumber, printer.responsible, printer.status].some(
+      (value) => value.toLocaleLowerCase('es').includes(normalizedSearch),
+    ),
+  );
+
+  function resetForm() {
+    setEditingId(null);
+    setForm(emptyPrinterForm);
+    setFormError('');
+    setFormSuccess('');
+    workspace.showList();
+  }
+
+  function startNew() {
+    resetForm();
+    workspace.showForm();
+  }
+
+  function editPrinter(printer: ApiPrinter) {
+    setEditingId(printer.id);
+    setForm({
+      area: printer.area,
+      model: printer.model,
+      serialNumber: printer.serialNumber,
+      status: printer.status,
+      responsible: printer.responsible,
+      installationDate: printer.installationDate.slice(0, 10),
+    });
+    setFormError('');
+    setFormSuccess('');
+    workspace.showForm();
+  }
+
+  async function removePrinter(printer: ApiPrinter) {
+    if (!window.confirm(`Dar de baja la impresora ${printer.serialNumber}?`)) return;
+    try {
+      await deleteMutation.mutateAsync(printer.id);
+      if (editingId === printer.id) resetForm();
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : 'No fue posible dar de baja la impresora.',
+      );
+    }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const body = {
+      ...form,
+      area: form.area.trim(),
+      model: form.model.trim(),
+      serialNumber: form.serialNumber.trim(),
+      responsible: form.responsible.trim(),
+    };
+    if (
+      !body.area ||
+      !body.model ||
+      !body.serialNumber ||
+      !body.responsible ||
+      !body.installationDate
+    ) {
+      setFormError('Todos los campos son obligatorios.');
+      return;
+    }
+    try {
+      await saveMutation.mutateAsync({ id: editingId, body });
+      resetForm();
+      setFormSuccess(editingId ? 'Impresora actualizada.' : 'Impresora registrada.');
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible guardar la impresora.');
+    }
+  }
+
+  function updateField<Key extends keyof PrinterFormState>(key: Key, value: PrinterFormState[Key]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  return (
+    <>
+      <header className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal text-foreground">Impresoras</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Control de impresoras, responsables, instalación y trazabilidad de cambios.
+          </p>
+        </div>
+        <Button onClick={startNew} variant="outline">
+          <Plus />
+          Nueva impresora
+        </Button>
+      </header>
+
+      {printersQuery.isLoading ? (
+        <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
+          Cargando impresoras...
+        </p>
+      ) : null}
+      {printersQuery.error ? (
+        <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
+          {printersQuery.error.message}
+        </p>
+      ) : null}
+
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <UserMetric icon={Printer} label="Registradas" value={printers.length} />
+        <UserMetric
+          icon={CheckCircle2}
+          label="Activas"
+          value={printers.filter((item) => item.status === 'ACTIVA').length}
+        />
+        <UserMetric
+          icon={AlertTriangle}
+          label="En reparación"
+          value={printers.filter((item) => item.status === 'REPARACION').length}
+        />
+        <UserMetric
+          icon={Users}
+          label="Áreas cubiertas"
+          value={new Set(printers.map((item) => item.area)).size}
+        />
+      </section>
+
+      {formError && workspace.pane === 'list' ? (
+        <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {formError}
+        </p>
+      ) : null}
+      {formSuccess ? (
+        <p
+          role="status"
+          className="mt-5 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800"
+        >
+          {formSuccess}
+        </p>
+      ) : null}
+      <div id={workspace.anchorId} className="scroll-mt-20">
+        <ModuleWorkspaceTabs
+          pane={workspace.pane}
+          onShowList={workspace.showList}
+          onShowForm={workspace.showForm}
+          formLabel={editingId ? 'Editar' : 'Nuevo'}
+        />
+      </div>
+      <section
+        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
+        data-mobile-pane={workspace.pane}
+      >
+        <form
+          data-pane="form"
+          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
+          onSubmit={submit}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">
+                {editingId ? 'Editar impresora' : 'Nueva impresora'}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Los cambios quedan registrados con el usuario responsable.
+              </p>
+            </div>
+            {editingId ? (
+              <Button
+                aria-label="Cancelar edición"
+                onClick={resetForm}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <X />
+              </Button>
+            ) : null}
+          </div>
+          <div className="mt-4 grid gap-4">
+            <label className="grid gap-2 text-sm font-medium">
+              Área
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => updateField('area', event.target.value)}
+                value={form.area}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Modelo
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => updateField('model', event.target.value)}
+                value={form.model}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Número de serie
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => updateField('serialNumber', event.target.value)}
+                value={form.serialNumber}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Responsable
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(event) => updateField('responsible', event.target.value)}
+                value={form.responsible}
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <label className="grid gap-2 text-sm font-medium">
+                Estado
+                <select
+                  className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => updateField('status', event.target.value as PrinterStatus)}
+                  value={form.status}
+                >
+                  <option value="ACTIVA">Activa</option>
+                  <option value="INACTIVA">Inactiva</option>
+                  <option value="REPARACION">En reparación</option>
+                  <option value="BAJA">Baja</option>
+                </select>
+              </label>
+              <label className="grid gap-2 text-sm font-medium">
+                Fecha de instalación
+                <input
+                  className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onChange={(event) => updateField('installationDate', event.target.value)}
+                  type="date"
+                  value={form.installationDate}
+                />
+              </label>
+            </div>
+            {formError ? (
+              <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {formError}
+              </p>
+            ) : null}
+            <Button disabled={saveMutation.isPending} type="submit">
+              {saveMutation.isPending ? (
+                'Guardando...'
+              ) : editingId ? (
+                <>
+                  <Edit3 />
+                  Guardar cambios
+                </>
+              ) : (
+                <>
+                  <Plus />
+                  Registrar impresora
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+
+        <section
+          data-pane="list"
+          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
+        >
+          <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Directorio de impresoras</h2>
+              <p className="text-sm text-muted-foreground">{filteredPrinters.length} registro(s)</p>
+            </div>
+            <label className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
+              <Search className="size-4 shrink-0 text-muted-foreground" />
+              <span className="sr-only">Buscar impresoras</span>
+              <input
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Buscar área, modelo o serie"
+                type="search"
+                value={searchTerm}
+              />
+            </label>
+          </div>
+          <RecordCards
+            items={filteredPrinters}
+            getKey={(printer) => printer.id}
+            title={(printer) => printer.model}
+            subtitle={(printer) => printer.serialNumber}
+            fields={[
+              { label: 'Área', render: (printer) => printer.area },
+              { label: 'Responsable', render: (printer) => printer.responsible },
+              {
+                label: 'Estado',
+                render: (printer) =>
+                  printer.status === 'REPARACION' ? 'En reparación' : printer.status.toLowerCase(),
+              },
+              {
+                label: 'Instalación',
+                render: (printer) => new Date(printer.installationDate).toLocaleDateString('es-MX'),
+              },
+              { label: 'Creado por', render: (printer) => printer.createdBy.name },
+              { label: 'Editado por', render: (printer) => printer.updatedBy.name },
+            ]}
+            actions={(printer) => (
+              <>
+                <Button onClick={() => editPrinter(printer)} type="button" variant="outline">
+                  <Edit3 /> Editar
+                </Button>
+                <Button
+                  disabled={deleteMutation.isPending}
+                  onClick={() => void removePrinter(printer)}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2 /> Eliminar
+                </Button>
+              </>
+            )}
+            emptyMessage="No se encontraron impresoras."
+          />
+          <div className="hidden overflow-x-auto xl:block">
+            <table className="w-full min-w-[980px] text-sm">
+              <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-semibold">Área</th>
+                  <th className="px-4 py-3 font-semibold">Modelo / Serie</th>
+                  <th className="px-4 py-3 font-semibold">Responsable</th>
+                  <th className="px-4 py-3 font-semibold">Estado</th>
+                  <th className="px-4 py-3 font-semibold">Instalación</th>
+                  <th className="px-4 py-3 font-semibold">Auditoría</th>
+                  <th className="px-4 py-3 text-right font-semibold">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredPrinters.map((printer) => (
+                  <tr
+                    className={editingId === printer.id ? 'bg-secondary/70' : undefined}
+                    key={printer.id}
+                  >
+                    <td className="px-4 py-3 font-medium">{printer.area}</td>
+                    <td className="px-4 py-3">
+                      <div>{printer.model}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {printer.serialNumber}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{printer.responsible}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={cn(
+                          'inline-flex rounded-md border px-2 py-1 text-xs font-semibold',
+                          printer.status === 'ACTIVA'
+                            ? 'border-teal-200 bg-teal-50 text-teal-800'
+                            : printer.status === 'REPARACION'
+                              ? 'border-amber-200 bg-amber-50 text-amber-800'
+                              : 'bg-background text-muted-foreground',
+                        )}
+                      >
+                        {printer.status === 'REPARACION'
+                          ? 'En reparación'
+                          : printer.status[0] + printer.status.slice(1).toLowerCase()}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {new Date(printer.installationDate).toLocaleDateString('es-MX')}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      <div>Creó: {printer.createdBy.name}</div>
+                      <div>Editó: {printer.updatedBy.name}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          aria-label={`Editar ${printer.model}`}
+                          onClick={() => editPrinter(printer)}
+                          size="icon"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Edit3 />
+                        </Button>
+                        <Button
+                          aria-label={`Eliminar ${printer.model}`}
+                          disabled={deleteMutation.isPending}
+                          onClick={() => void removePrinter(printer)}
+                          size="icon"
+                          type="button"
+                          variant="destructive"
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filteredPrinters.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={7}>
+                      No se encontraron impresoras.
                     </td>
                   </tr>
                 ) : null}

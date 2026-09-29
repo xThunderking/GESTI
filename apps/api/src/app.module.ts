@@ -6,6 +6,11 @@ import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
+import { PrintersModule } from './printers/printers.module';
+import { AreasModule } from './areas/areas.module';
+import { TowerIpsModule } from './tower-ips/tower-ips.module';
+import { EmailRequestsModule } from './email-requests/email-requests.module';
+import { TonersModule } from './toners/toners.module';
 
 @Module({
   imports: [
@@ -18,6 +23,11 @@ import { UsersModule } from './users/users.module';
     HealthModule,
     AuthModule,
     UsersModule,
+    PrintersModule,
+    AreasModule,
+    TowerIpsModule,
+    EmailRequestsModule,
+    TonersModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

@@ -33,14 +33,13 @@ export async function publicApiRequest<T>(
   tabId: string,
   init?: RequestInit,
 ): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (!(init?.body instanceof FormData)) headers.set('Content-Type', 'application/json');
+  headers.set('X-Tab-Id', tabId);
   const response = await fetch(`${apiUrl}${path}`, {
     ...init,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Tab-Id': tabId,
-      ...init?.headers,
-    },
+    headers,
   });
 
   return parseResponse<T>(response);
@@ -52,15 +51,14 @@ export async function protectedApiRequest<T>(
   accessToken: string,
   init?: RequestInit,
 ): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (!(init?.body instanceof FormData)) headers.set('Content-Type', 'application/json');
+  headers.set('Authorization', `Bearer ${accessToken}`);
+  headers.set('X-Tab-Id', tabId);
   const response = await fetch(`${apiUrl}${path}`, {
     ...init,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-      'X-Tab-Id': tabId,
-      ...init?.headers,
-    },
+    headers,
   });
 
   return parseResponse<T>(response);
