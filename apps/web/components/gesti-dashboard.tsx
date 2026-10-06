@@ -3,6 +3,8 @@
 import Image from 'next/image';
 import {
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
   BarChart3,
   Building2,
   Boxes,
@@ -16,7 +18,7 @@ import {
   Laptop,
   LogOut,
   Mail,
-  Menu,
+  Minus,
   Network,
   Phone,
   Plus,
@@ -26,7 +28,6 @@ import {
   ShieldCheck,
   Trash2,
   UserCheck,
-  UserCog,
   UserPlus,
   Users,
   X,
@@ -67,6 +68,7 @@ type HealthResponse = {
 };
 
 type ViewName =
+  | 'modules'
   | 'dashboard'
   | 'users'
   | 'printers'
@@ -77,6 +79,126 @@ type ViewName =
   | 'areas'
   | 'tower-ips'
   | 'it-services';
+type ModuleCardDefinition = {
+  id: ViewName;
+  label: string;
+  description: string;
+  summary: string;
+  icon: LucideIcon;
+  tone: 'teal' | 'blue' | 'violet' | 'orange';
+  permission?: 'users' | 'inventory' | 'areas';
+};
+
+const moduleCards: ModuleCardDefinition[] = [
+  {
+    id: 'dashboard',
+    label: 'Tablero',
+    description: 'Consulta el estado general de los recursos y servicios de TI.',
+    summary: 'Resumen operativo',
+    icon: BarChart3,
+    tone: 'teal',
+  },
+  {
+    id: 'printers',
+    label: 'Impresoras',
+    description: 'Administra impresoras, ubicaciones, modelos y responsables.',
+    summary: 'Inventario de impresión',
+    icon: Printer,
+    tone: 'blue',
+    permission: 'inventory',
+  },
+  {
+    id: 'toners',
+    label: 'Toners',
+    description: 'Controla consumibles, colores y su relación con impresoras.',
+    summary: 'Control de consumibles',
+    icon: Boxes,
+    tone: 'violet',
+    permission: 'inventory',
+  },
+  {
+    id: 'computer-equipment',
+    label: 'Equipos de cómputo',
+    description: 'Consulta equipos, asignaciones, ubicaciones y responsables.',
+    summary: 'Inventario de equipos',
+    icon: Laptop,
+    tone: 'teal',
+    permission: 'inventory',
+  },
+  {
+    id: 'extensions',
+    label: 'Extensiones',
+    description: 'Administra extensiones telefónicas y las áreas asignadas.',
+    summary: 'Directorio telefónico',
+    icon: Phone,
+    tone: 'orange',
+    permission: 'inventory',
+  },
+  {
+    id: 'tower-ips',
+    label: 'IPs Torre Médica',
+    description: 'Gestiona direcciones IP, consultorios y ubicaciones de Torre Médica.',
+    summary: 'Red de Torre Médica',
+    icon: Network,
+    tone: 'blue',
+    permission: 'areas',
+  },
+  {
+    id: 'haq-ips',
+    label: 'IPs de HAQ',
+    description: 'Administra direcciones IP y responsables del Hospital de Alta Especialidad.',
+    summary: 'Red de HAQ',
+    icon: Network,
+    tone: 'violet',
+    permission: 'areas',
+  },
+  {
+    id: 'it-services',
+    label: 'Servicios TI',
+    description: 'Gestiona solicitudes de correo institucional y sus formatos.',
+    summary: 'Solicitudes de TI',
+    icon: Server,
+    tone: 'teal',
+    permission: 'areas',
+  },
+  {
+    id: 'users',
+    label: 'Usuarios',
+    description: 'Administra cuentas, perfiles, roles y acceso al sistema.',
+    summary: 'Acceso al sistema',
+    icon: Users,
+    tone: 'blue',
+    permission: 'users',
+  },
+  {
+    id: 'areas',
+    label: 'Áreas',
+    description: 'Mantén el catálogo de áreas del hospital y sus descripciones.',
+    summary: 'Catálogo hospitalario',
+    icon: Building2,
+    tone: 'orange',
+    permission: 'areas',
+  },
+];
+
+const moduleToneStyles = {
+  teal: {
+    icon: 'bg-teal-100 text-teal-700',
+    summary: 'bg-teal-50 text-teal-800',
+  },
+  blue: {
+    icon: 'bg-sky-100 text-sky-700',
+    summary: 'bg-sky-50 text-sky-800',
+  },
+  violet: {
+    icon: 'bg-violet-100 text-violet-700',
+    summary: 'bg-violet-50 text-violet-800',
+  },
+  orange: {
+    icon: 'bg-orange-100 text-orange-700',
+    summary: 'bg-orange-50 text-orange-800',
+  },
+} as const;
 type UserStatus = 'Activo' | 'Inactivo';
 type PrinterStatus = 'ACTIVA' | 'INACTIVA' | 'REPARACION' | 'BAJA';
 type UserRow = {
@@ -101,6 +223,7 @@ type ApiPrinter = {
   area: string;
   model: string;
   serialNumber: string;
+  ip: string | null;
   status: PrinterStatus;
   responsible: string;
   installationDate: string;
@@ -113,6 +236,7 @@ type PrinterFormState = {
   area: string;
   model: string;
   serialNumber: string;
+  ip: string;
   status: PrinterStatus;
   responsible: string;
   installationDate: string;
@@ -122,17 +246,29 @@ type ApiToner = {
   id: string;
   model: string;
   color: string;
-  printerId: string;
-  printer: { id: string; model: string; serialNumber: string; area: string };
+  printerName: string;
+  quantity: number;
   createdBy: { name: string };
   updatedBy: { name: string };
+};
+
+type ApiTonerMovement = {
+  id: string;
+  quantity: number;
+  tonerModel: string;
+  printerName: string;
+  userName: string;
+  createdAt: string;
 };
 
 type TonerFormState = {
   model: string;
   color: string;
-  printerId: string;
+  printerName: string;
+  quantity: string;
 };
+
+type TonerSaveBody = Omit<TonerFormState, 'quantity'> & { quantity: number };
 
 type ApiComputerEquipment = {
   id: string;
@@ -258,6 +394,7 @@ const emptyPrinterForm: PrinterFormState = {
   area: '',
   model: '',
   serialNumber: '',
+  ip: '',
   status: 'ACTIVA',
   responsible: '',
   installationDate: new Date().toISOString().slice(0, 10),
@@ -266,8 +403,60 @@ const emptyPrinterForm: PrinterFormState = {
 const emptyTonerForm: TonerFormState = {
   model: '',
   color: 'Negro',
-  printerId: '',
+  printerName: '',
+  quantity: '1',
 };
+
+function tonerModelSuffix(model: string) {
+  return model.replace(/^(?:TK-)+/i, '');
+}
+
+function tonerColorClass(color: string) {
+  switch (color.toLocaleLowerCase('es')) {
+    case 'negro':
+      return 'bg-slate-100 text-slate-800 ring-slate-300';
+    case 'cian':
+      return 'bg-cyan-50 text-cyan-800 ring-cyan-200';
+    case 'magenta':
+      return 'bg-fuchsia-50 text-fuchsia-800 ring-fuchsia-200';
+    case 'amarillo':
+      return 'bg-amber-50 text-amber-800 ring-amber-200';
+    default:
+      return 'bg-violet-50 text-violet-800 ring-violet-200';
+  }
+}
+
+function tonerCardStyle(color: string) {
+  switch (color.toLocaleLowerCase('es')) {
+    case 'cian':
+    case 'cyan':
+      return {
+        card: 'border-cyan-200 bg-cyan-50/50 hover:border-cyan-400 hover:shadow-cyan-900/10',
+        header: 'border-cyan-100 bg-gradient-to-br from-cyan-100/80 via-white to-cyan-50/70',
+      };
+    case 'magenta':
+      return {
+        card: 'border-fuchsia-200 bg-fuchsia-50/50 hover:border-fuchsia-400 hover:shadow-fuchsia-900/10',
+        header: 'border-fuchsia-100 bg-gradient-to-br from-fuchsia-100/80 via-white to-fuchsia-50/70',
+      };
+    case 'amarillo':
+    case 'yellow':
+      return {
+        card: 'border-amber-200 bg-amber-50/60 hover:border-amber-400 hover:shadow-amber-900/10',
+        header: 'border-amber-100 bg-gradient-to-br from-amber-100/80 via-white to-amber-50/70',
+      };
+    case 'negro':
+      return {
+        card: 'border-sky-100 shadow-md shadow-slate-900/5 hover:-translate-y-0.5 hover:border-teal-300 hover:shadow-lg hover:shadow-teal-900/10',
+        header: 'border-sky-100 bg-gradient-to-br from-sky-50/90 via-white to-teal-50/80',
+      };
+    default:
+      return {
+        card: 'border-violet-200 bg-violet-50/50 hover:border-violet-400 hover:shadow-violet-900/10',
+        header: 'border-violet-100 bg-gradient-to-br from-violet-100/80 via-white to-violet-50/70',
+      };
+  }
+}
 
 const emptyComputerEquipmentForm: ComputerEquipmentFormState = {
   serialNumber: '',
@@ -431,8 +620,7 @@ export function GestiDashboard() {
   const [session, setSession] = useState<AuthResponse | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [loginNotice, setLoginNotice] = useState('');
-  const [activeView, setActiveView] = useState<ViewName>('dashboard');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeView, setActiveView] = useState<ViewName>('modules');
   const refreshPromise = useRef<Promise<AuthResponse> | null>(null);
   const queryClient = useQueryClient();
   const healthQuery = useQuery({
@@ -450,50 +638,18 @@ export function GestiDashboard() {
   const canViewAreas = currentUser
     ? currentUser.roles.some((role) => ['ADMIN', 'SUPERVISOR', 'TI'].includes(role))
     : false;
-  const navigationSections: Array<{
-    label: string;
-    items: Array<{ id: ViewName; label: string; icon: LucideIcon }>;
-  }> = [
-    { label: 'Principal', items: [{ id: 'dashboard', label: 'Tablero', icon: BarChart3 }] },
-    {
-      label: 'Inventario',
-      items: canViewPrinters
-        ? [
-            { id: 'printers', label: 'Impresoras', icon: Printer },
-            { id: 'toners', label: 'Toners', icon: Boxes },
-            { id: 'computer-equipment', label: 'Equipos de cómputo', icon: Laptop },
-            { id: 'extensions', label: 'Extensiones', icon: Phone },
-          ]
-        : [],
-    },
-    {
-      label: 'Redes',
-      items: canViewAreas
-        ? [
-            { id: 'tower-ips', label: 'IPs Torre Médica', icon: Network },
-            { id: 'haq-ips', label: 'IPs de HAQ', icon: Network },
-          ]
-        : [],
-    },
-    {
-      label: 'Formatos',
-      items: canViewAreas ? [{ id: 'it-services', label: 'Servicios TI', icon: Server }] : [],
-    },
-    {
-      label: 'Administración',
-      items: [
-        ...(canViewUsers ? [{ id: 'users' as const, label: 'Usuarios', icon: Users }] : []),
-        ...(canViewAreas ? [{ id: 'areas' as const, label: 'Áreas', icon: Building2 }] : []),
-      ],
-    },
-  ];
-
+  const availableModules = moduleCards.filter((module) => {
+    if (module.permission === 'users') return canViewUsers;
+    if (module.permission === 'inventory') return canViewPrinters;
+    if (module.permission === 'areas') return canViewAreas;
+    return true;
+  });
   const clearLocalSession = useCallback(
     (notice = '') => {
       window.sessionStorage.removeItem(tabStorageKey);
       window.sessionStorage.removeItem('gesti-session');
       setSession(null);
-      setActiveView('dashboard');
+      setActiveView('modules');
       setLoginNotice(notice);
       queryClient.removeQueries({ queryKey: ['users'] });
     },
@@ -633,7 +789,7 @@ export function GestiDashboard() {
     });
     window.sessionStorage.setItem(tabStorageKey, tabId);
     setSession(authenticated);
-    setActiveView('dashboard');
+    setActiveView('modules');
     setLoginNotice('');
   }
 
@@ -663,86 +819,68 @@ export function GestiDashboard() {
     );
   }
 
+  if (activeView === 'modules') {
+    return (
+      <ModulesHome
+        currentUser={currentUser}
+        modules={availableModules}
+        onLogout={() => void handleLogout()}
+        onSelectModule={setActiveView}
+      />
+    );
+  }
+
   return (
-    <main className="min-h-screen bg-[#f5f7fa]">
-      <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="sticky top-0 z-30 flex flex-col border-b border-white/10 bg-[#061b38] px-4 py-3 text-white lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r lg:py-4">
-          <div className="flex items-center justify-between lg:block">
-            <BrandMark />
+    <main data-dashboard className="min-h-screen bg-[#f5f7fa]">
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-[1560px] items-center justify-between gap-3 px-4 sm:px-6 xl:px-10">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-4">
             <Button
-              aria-expanded={mobileMenuOpen}
-              aria-controls="gesti-navigation"
-              aria-label={mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'}
-              className="border-white/15 bg-white/10 text-white hover:bg-white/15 hover:text-white lg:hidden"
-              onClick={() => setMobileMenuOpen((open) => !open)}
-              size="icon"
+              aria-label="Regresar al menú"
+              className="group h-10 shrink-0 rounded-xl border-slate-200 bg-white px-2.5 text-[#0b2347] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-teal-200 hover:bg-teal-50 hover:text-[#0b2347] hover:shadow-md active:translate-y-0 sm:px-3.5"
+              onClick={() => setActiveView('modules')}
               variant="outline"
             >
-              <Menu />
+              <ArrowLeft className="transition-transform duration-200 group-hover:-translate-x-0.5" />
+              <span className="hidden sm:inline">Regresar</span>
+            </Button>
+            <Image
+              alt="GESTI"
+              className="h-8 w-[104px] shrink-0 object-contain sm:h-10 sm:w-[140px]"
+              height={64}
+              priority
+              src={brandLogoPath}
+              width={192}
+            />
+          </div>
+
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#0b2347] text-sm font-semibold text-white">
+              {currentUser.name.trim().slice(0, 1).toLocaleUpperCase('es') || 'U'}
+            </span>
+            <div className="min-w-0 text-right">
+              <p className="max-w-16 truncate text-xs font-semibold text-slate-800 sm:max-w-44 sm:text-sm">
+                {currentUser.name}
+              </p>
+              <p className="hidden max-w-44 truncate text-xs text-slate-500 sm:block">
+                {currentUser.roles.join(', ')}
+              </p>
+            </div>
+            <Button
+              aria-label="Cerrar sesión"
+              className="group h-10 shrink-0 rounded-xl border-rose-200 bg-rose-50/70 px-2.5 text-rose-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800 hover:shadow-md active:translate-y-0 sm:px-3.5"
+              onClick={() => void handleLogout()}
+              variant="outline"
+            >
+              <LogOut className="transition-transform duration-200 group-hover:translate-x-0.5" />
+              <span className="hidden sm:inline">Cerrar sesión</span>
             </Button>
           </div>
+        </div>
+      </header>
 
-          <div
-            id="gesti-navigation"
-            className={cn(
-              'max-h-[calc(100dvh-4rem)] flex-1 flex-col overflow-y-auto lg:max-h-none lg:overflow-visible',
-              mobileMenuOpen ? 'flex' : 'hidden',
-              'lg:flex',
-            )}
-          >
-            <nav className="mt-5 grid gap-5 lg:mt-6">
-              {navigationSections
-                .filter((section) => section.items.length > 0)
-                .map((section) => (
-                  <div key={section.label}>
-                    <p className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
-                      {section.label}
-                    </p>
-                    <div className="grid gap-1">
-                      {section.items.map((item) => (
-                        <button
-                          aria-current={activeView === item.id ? 'page' : undefined}
-                          className={cn(
-                            'flex h-10 items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white',
-                            activeView === item.id && 'bg-[#00afaa] text-[#061b38]',
-                          )}
-                          onClick={() => {
-                            setActiveView(item.id);
-                            setMobileMenuOpen(false);
-                          }}
-                          key={item.label}
-                          type="button"
-                        >
-                          <item.icon className="size-4" />
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-            </nav>
-
-            <div className="mt-6 border-t border-white/10 pt-4 lg:mt-auto">
-              <div className="rounded-md border border-white/10 bg-white/8 p-3">
-                <p className="text-sm font-semibold">{currentUser.name}</p>
-                <p className="mt-1 break-all text-xs text-white/65">{currentUser.email}</p>
-                <span className="mt-3 inline-flex rounded-md border border-white/15 bg-white/10 px-2 py-1 text-xs font-semibold text-white">
-                  {currentUser.roles.join(', ')}
-                </span>
-              </div>
-              <Button
-                className="mt-3 w-full justify-start border-white/15 bg-transparent text-white hover:bg-white/10 hover:text-white"
-                onClick={() => handleLogout()}
-                variant="outline"
-              >
-                <LogOut />
-                Cerrar sesion
-              </Button>
-            </div>
-          </div>
-        </aside>
-
-        <section className="min-w-0 px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
+      <section className="min-w-0 px-4 py-4 sm:px-6 sm:py-5 md:px-8 xl:px-10">
+        <div className="mx-auto max-w-[1560px]">
           {activeView === 'dashboard' ? (
             <>
               <header className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-center xl:justify-between">
@@ -974,29 +1112,139 @@ export function GestiDashboard() {
           ) : activeView === 'haq-ips' && canViewAreas ? (
             <HaqIpsView request={authenticatedRequest} />
           ) : null}
-        </section>
-      </div>
+        </div>
+      </section>
     </main>
   );
 }
 
-function BrandMark() {
+function ModulesHome({
+  currentUser,
+  modules,
+  onLogout,
+  onSelectModule,
+}: {
+  currentUser: AuthResponse['user'];
+  modules: ModuleCardDefinition[];
+  onLogout: () => void;
+  onSelectModule: (view: ViewName) => void;
+}) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es');
+  const filteredModules = modules.filter((module) =>
+    [module.label, module.description, module.summary].some((value) =>
+      value.toLocaleLowerCase('es').includes(normalizedSearch),
+    ),
+  );
+  const initials = currentUser.name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toLocaleUpperCase('es');
+
   return (
-    <div className="flex items-center gap-3 px-2">
-      <span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-white p-1 shadow-sm">
-        <Image
-          alt="Icono GESTI"
-          className="size-full object-contain"
-          height={44}
-          src={brandIconPath}
-          width={44}
-        />
-      </span>
-      <div className="min-w-0">
-        <p className="text-lg font-semibold tracking-normal">GESTI</p>
-        <p className="text-xs text-white/65">Sistema de gestion de TI</p>
+    <main data-module-home className="min-h-screen bg-[#f3f8fc] text-[#0b1e3a]">
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 shadow-sm backdrop-blur">
+        <div className="mx-auto flex min-h-[76px] max-w-[1560px] items-center justify-between gap-4 px-4 sm:px-6 xl:px-10">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-white ring-1 ring-slate-200">
+              <Image
+                alt="GESTI"
+                className="size-10 object-contain"
+                height={44}
+                priority
+                src={brandIconPath}
+                width={44}
+              />
+            </span>
+            <div className="min-w-0">
+              <p className="text-lg font-bold leading-tight tracking-tight">GESTI</p>
+              <p className="truncate text-xs text-slate-500 sm:text-sm">Sistema de gestión de TI</p>
+            </div>
+          </div>
+
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <div className="hidden min-w-0 text-right sm:block">
+              <p className="max-w-44 truncate text-sm font-semibold">{currentUser.name}</p>
+              <p className="text-xs text-slate-500">{currentUser.roles.join(', ')}</p>
+            </div>
+            <span
+              aria-label={`Sesión de ${currentUser.name}`}
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#0b2347] text-sm font-semibold text-white shadow-sm"
+            >
+              {initials || 'GT'}
+            </span>
+            <Button
+              aria-label="Cerrar sesión"
+              className="text-slate-600"
+              onClick={onLogout}
+              size="icon"
+              variant="ghost"
+            >
+              <LogOut />
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-[1560px] px-4 pb-10 pt-3 sm:px-6 sm:pt-5 xl:px-10">
+        <section aria-label="Módulos" className="mt-1">
+          <div className="mb-4 flex justify-end">
+            <label className="flex h-11 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm transition focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-500/15 sm:max-w-sm">
+              <Search className="size-4 shrink-0 text-slate-400" />
+              <span className="sr-only">Buscar módulos</span>
+              <input
+                className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-slate-400"
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Buscar módulo..."
+                type="search"
+                value={searchTerm}
+              />
+            </label>
+          </div>
+
+          {filteredModules.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+              {filteredModules.map((module) => {
+                const tone = moduleToneStyles[module.tone];
+                return (
+                  <button
+                    className="group flex min-h-[206px] min-w-0 flex-col rounded-2xl border border-slate-200/90 bg-white p-3 text-left shadow-[0_8px_24px_rgba(15,35,65,0.045)] transition duration-200 hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-[0_14px_34px_rgba(15,35,65,0.1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 sm:min-h-[220px] sm:p-5"
+                    key={module.id}
+                    onClick={() => onSelectModule(module.id)}
+                    type="button"
+                  >
+                    <span className="flex w-full min-w-0 items-center gap-2 sm:gap-3">
+                      <span className={cn('flex size-11 shrink-0 items-center justify-center rounded-xl sm:size-14', tone.icon)}>
+                        <module.icon className="size-5 sm:size-7" strokeWidth={2.1} />
+                      </span>
+                      <span className="min-w-0 flex-1 text-sm font-bold leading-tight text-[#0b1e3a] sm:text-base lg:text-lg">
+                        {module.label}
+                      </span>
+                      <ArrowRight className="hidden size-5 shrink-0 text-slate-400 transition group-hover:translate-x-1 group-hover:text-[#0b1e3a] sm:block" />
+                    </span>
+                    <span className="mt-3 line-clamp-2 min-h-10 text-xs leading-5 text-slate-600 sm:mt-4 sm:min-h-12 sm:text-sm sm:leading-6">
+                      {module.description}
+                    </span>
+                    <span className={cn('mt-auto flex min-h-10 w-full items-center gap-2 rounded-xl px-2.5 py-2 text-[10px] font-semibold leading-tight sm:mt-4 sm:min-h-11 sm:px-3 sm:text-xs', tone.summary)}>
+                      <module.icon className="size-4 shrink-0" />
+                      <span className="line-clamp-2">{module.summary}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/75 px-4 py-12 text-center text-sm text-slate-500">
+              No hay módulos que coincidan con “{searchTerm}”.
+            </div>
+          )}
+        </section>
+
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -1455,25 +1703,6 @@ function UsersView({
         </p>
       ) : null}
 
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <UserMetric icon={Users} label="Usuarios totales" value={users.length} />
-        <UserMetric
-          icon={UserCheck}
-          label="Usuarios activos"
-          value={users.filter((user) => user.status === 'Activo').length}
-        />
-        <UserMetric
-          icon={ShieldCheck}
-          label="Administradores"
-          value={users.filter((user) => user.role === 'ADMIN').length}
-        />
-        <UserMetric
-          icon={UserCog}
-          label="Gestionables"
-          value={users.filter((user) => !user.essential).length}
-        />
-      </section>
-
       {formError && workspace.pane === 'list' ? (
         <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {formError}
@@ -1608,7 +1837,6 @@ function UsersView({
           <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold tracking-normal">Directorio de usuarios</h2>
-              <p className="text-sm text-muted-foreground">{filteredUsers.length} registro(s)</p>
             </div>
             <label className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
               <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -1883,24 +2111,6 @@ function TowerIpsView({ request }: { request: AuthenticatedRequest }) {
           {ipsQuery.error.message}
         </p>
       ) : null}
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <UserMetric icon={Network} label="IPs registradas" value={ips.length} />
-        <UserMetric
-          icon={CheckCircle2}
-          label="Con antena"
-          value={ips.filter((item) => item.antenna).length}
-        />
-        <UserMetric
-          icon={Building2}
-          label="Consultorios"
-          value={new Set(ips.map((item) => item.office)).size}
-        />
-        <UserMetric
-          icon={Users}
-          label="Responsables"
-          value={new Set(ips.map((item) => item.responsible)).size}
-        />
-      </section>
       {formError && workspace.pane === 'list' ? (
         <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {formError}
@@ -1919,7 +2129,7 @@ function TowerIpsView({ request }: { request: AuthenticatedRequest }) {
           pane={workspace.pane}
           onShowList={workspace.showList}
           onShowForm={workspace.showForm}
-          formLabel={editingId ? 'Editar' : 'Nuevo'}
+          formLabel="Nuevo"
         />
       </div>
       <section
@@ -2279,24 +2489,6 @@ function HaqIpsView({ request }: { request: AuthenticatedRequest }) {
           {ipsQuery.error.message}
         </p>
       ) : null}
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <UserMetric icon={Network} label="IPs registradas" value={ips.length} />
-        <UserMetric
-          icon={Building2}
-          label="Áreas"
-          value={new Set(ips.map((item) => item.area)).size}
-        />
-        <UserMetric
-          icon={Users}
-          label="Responsables"
-          value={new Set(ips.map((item) => item.responsible)).size}
-        />
-        <UserMetric
-          icon={UserCog}
-          label="Usuarios"
-          value={new Set(ips.map((item) => item.username)).size}
-        />
-      </section>
 
       {formError && workspace.pane === 'list' ? (
         <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
@@ -2426,7 +2618,6 @@ function HaqIpsView({ request }: { request: AuthenticatedRequest }) {
           <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold">Directorio de IPs de HAQ</h2>
-              <p className="text-sm text-muted-foreground">{filteredIps.length} registro(s)</p>
             </div>
             <label className="flex h-10 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
               <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -2756,19 +2947,6 @@ function EmailRequestsView({ request }: { request: AuthenticatedRequest }) {
           {requestsQuery.error.message}
         </p>
       ) : null}
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <UserMetric icon={FileText} label="Solicitudes registradas" value={requests.length} />
-        <UserMetric
-          icon={CheckCircle2}
-          label="Formatos generados"
-          value={requests.filter((item) => item.lastGeneratedAt).length}
-        />
-        <UserMetric
-          icon={Users}
-          label="Colaboradores"
-          value={new Set(requests.map((item) => item.collaboratorNo)).size}
-        />
-      </section>
       {formError && workspace.pane === 'list' ? (
         <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {formError}
@@ -2791,7 +2969,7 @@ function EmailRequestsView({ request }: { request: AuthenticatedRequest }) {
         />
       </div>
       <section
-        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(320px,430px)_minmax(0,1fr)]"
+        className="module-workspace-wide mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(320px,430px)_minmax(0,1fr)]"
         data-mobile-pane={workspace.pane}
       >
         <form
@@ -2938,7 +3116,6 @@ function EmailRequestsView({ request }: { request: AuthenticatedRequest }) {
           <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold">Solicitudes de correo</h2>
-              <p className="text-sm text-muted-foreground">{filteredRequests.length} registro(s)</p>
             </div>
             <label className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
               <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -3180,20 +3357,6 @@ function AreasView({ request }: { request: AuthenticatedRequest }) {
         </p>
       ) : null}
 
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <UserMetric icon={Building2} label="Áreas registradas" value={areas.length} />
-        <UserMetric
-          icon={CheckCircle2}
-          label="Con descripción"
-          value={areas.filter((area) => Boolean(area.description)).length}
-        />
-        <UserMetric
-          icon={Users}
-          label="Áreas sin descripción"
-          value={areas.filter((area) => !area.description).length}
-        />
-      </section>
-
       {formError && workspace.pane === 'list' ? (
         <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {formError}
@@ -3294,7 +3457,6 @@ function AreasView({ request }: { request: AuthenticatedRequest }) {
           <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold">Directorio de áreas</h2>
-              <p className="text-sm text-muted-foreground">{filteredAreas.length} registro(s)</p>
             </div>
             <label className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
               <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -3402,10 +3564,15 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
   const queryClient = useQueryClient();
   const workspace = useModuleWorkspace();
   const [searchTerm, setSearchTerm] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<TonerFormState>(emptyTonerForm);
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
+  const [stockAction, setStockAction] = useState<'add' | 'remove' | null>(null);
+  const [activeToner, setActiveToner] = useState<ApiToner | null>(null);
+  const [showingHistory, setShowingHistory] = useState(false);
+  const [stockQuantity, setStockQuantity] = useState('1');
+  const [selectedPrinterId, setSelectedPrinterId] = useState('');
+  const [stockError, setStockError] = useState('');
   const tonersQuery = useQuery({
     queryKey: ['toners'],
     queryFn: () => request<ApiToner[]>('/toners'),
@@ -3414,34 +3581,43 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
     queryKey: ['printers'],
     queryFn: () => request<ApiPrinter[]>('/printers'),
   });
+  const historyQuery = useQuery({
+    queryKey: ['toner-history'],
+    queryFn: () => request<ApiTonerMovement[]>('/toners/history'),
+    enabled: showingHistory,
+  });
   const saveMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string | null; body: TonerFormState }) =>
-      request<ApiToner>(id ? `/toners/${id}` : '/toners', {
-        method: id ? 'PATCH' : 'POST',
+    mutationFn: (body: TonerSaveBody) =>
+      request<ApiToner>('/toners', {
+        method: 'POST',
         body: JSON.stringify(body),
       }),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['toners'] }),
   });
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => request<void>(`/toners/${id}`, { method: 'DELETE' }),
+  const stockMutation = useMutation({
+    mutationFn: ({ tonerId, action, quantity, printerId }: {
+      tonerId: string;
+      action: 'add' | 'remove';
+      quantity: number;
+      printerId?: string;
+    }) => request(`/toners/${tonerId}/stock/${action}`, {
+      method: 'POST',
+      body: JSON.stringify(action === 'remove' ? { quantity, printerId } : { quantity }),
+    }),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['toners'] }),
   });
   const toners = tonersQuery.data ?? [];
-  const printers = printersQuery.data ?? [];
   const filteredToners = toners.filter((toner) =>
     [
       toner.model,
       toner.color,
-      toner.printer.model,
-      toner.printer.serialNumber,
-      toner.printer.area,
+      toner.printerName,
     ].some((value) =>
       value.toLocaleLowerCase('es').includes(searchTerm.trim().toLocaleLowerCase('es')),
     ),
   );
 
   function resetForm() {
-    setEditingId(null);
     setForm(emptyTonerForm);
     setFormError('');
     setFormSuccess('');
@@ -3449,42 +3625,85 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
   }
 
   function startNew() {
-    resetForm();
-    workspace.showForm();
-  }
-
-  function editToner(toner: ApiToner) {
-    setEditingId(toner.id);
-    setForm({ model: toner.model, color: toner.color, printerId: toner.printerId });
+    setShowingHistory(false);
+    setForm(emptyTonerForm);
     setFormError('');
     setFormSuccess('');
     workspace.showForm();
   }
 
-  async function removeToner(toner: ApiToner) {
-    if (!window.confirm(`Dar de baja el toner ${toner.model}?`)) return;
+  function showTonerList() {
+    setShowingHistory(false);
+    workspace.showList();
+  }
+
+  function showTonerHistory() {
+    setShowingHistory(true);
+    workspace.showList();
+  }
+
+  function openStockDialog(toner: ApiToner, action: 'add' | 'remove') {
+    setActiveToner(toner);
+    setStockAction(action);
+    setStockQuantity('1');
+    setSelectedPrinterId('');
+    setStockError('');
+  }
+
+  function closeStockDialog() {
+    setStockAction(null);
+    setActiveToner(null);
+    setStockError('');
+  }
+
+  async function submitStockAction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeToner || (stockAction !== 'add' && stockAction !== 'remove')) return;
+    const quantity = Number(stockQuantity);
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      setStockError('Ingresa una cantidad entera mayor que cero.');
+      return;
+    }
+    if (stockAction === 'remove' && !selectedPrinterId) {
+      setStockError('Selecciona la impresora donde se instaló el toner.');
+      return;
+    }
     try {
-      await deleteMutation.mutateAsync(toner.id);
-      if (editingId === toner.id) resetForm();
+      await stockMutation.mutateAsync({
+        tonerId: activeToner.id,
+        action: stockAction,
+        quantity,
+        printerId: stockAction === 'remove' ? selectedPrinterId : undefined,
+      });
+      setFormSuccess(stockAction === 'add' ? 'Toner agregado al stock.' : 'Salida de toner registrada.');
+      closeStockDialog();
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'No fue posible dar de baja el toner.');
+      setStockError(error instanceof Error ? error.message : 'No fue posible actualizar el stock.');
     }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!form.model.trim() || !form.color.trim() || !form.printerId) {
-      setFormError('Modelo, color e impresora son obligatorios.');
+    const quantity = Number(form.quantity);
+    if (
+      !form.model.trim() ||
+      !form.color.trim() ||
+      !form.printerName.trim() ||
+      !Number.isInteger(quantity) ||
+      quantity < 1
+    ) {
+      setFormError('Completa todos los campos con una cantidad entera mayor que cero.');
       return;
     }
     try {
-      const wasEditing = Boolean(editingId);
       await saveMutation.mutateAsync({
-        id: editingId,
-        body: { ...form, model: form.model.trim(), color: form.color.trim() },
+        model: `TK-${tonerModelSuffix(form.model.trim())}`,
+        color: form.color.trim(),
+        printerName: form.printerName.trim(),
+        quantity,
       });
       resetForm();
-      setFormSuccess(wasEditing ? 'Toner actualizado.' : 'Toner registrado.');
+      setFormSuccess('Toner registrado.');
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'No fue posible guardar el toner.');
     }
@@ -3499,34 +3718,17 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
             Catálogo de toners compatibles con las impresoras registradas.
           </p>
         </div>
-        <Button onClick={startNew} variant="outline">
-          <Plus />
-          Nuevo toner
-        </Button>
       </header>
-      {tonersQuery.isLoading || printersQuery.isLoading ? (
+      {tonersQuery.isLoading ? (
         <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
           Cargando toners...
         </p>
       ) : null}
-      {tonersQuery.error || printersQuery.error ? (
+      {tonersQuery.error ? (
         <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
-          {tonersQuery.error?.message ?? printersQuery.error?.message}
+          {tonersQuery.error.message}
         </p>
       ) : null}
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <UserMetric icon={Boxes} label="Toners registrados" value={toners.length} />
-        <UserMetric
-          icon={Printer}
-          label="Impresoras con toner"
-          value={new Set(toners.map((toner) => toner.printerId)).size}
-        />
-        <UserMetric
-          icon={CheckCircle2}
-          label="Colores registrados"
-          value={new Set(toners.map((toner) => toner.color.toLocaleLowerCase('es'))).size}
-        />
-      </section>
       {formError && workspace.pane === 'list' ? (
         <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {formError}
@@ -3543,49 +3745,54 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
       <div id={workspace.anchorId} className="scroll-mt-20">
         <ModuleWorkspaceTabs
           pane={workspace.pane}
-          onShowList={workspace.showList}
-          onShowForm={workspace.showForm}
-          formLabel={editingId ? 'Editar' : 'Nuevo'}
+          onShowList={showTonerList}
+          onShowForm={startNew}
+          onShowHistory={showTonerHistory}
+          historyActive={showingHistory}
+          formLabel="Nuevo"
+          showOnDesktop
         />
       </div>
       <section
-        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
-        data-mobile-pane={workspace.pane}
+        className={cn(
+          'mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]',
+          showingHistory && 'xl:grid-cols-1',
+        )}
+        data-mobile-pane={showingHistory ? 'history' : workspace.pane}
       >
         <form
           data-pane="form"
-          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
+          className={cn('min-w-0 rounded-md border bg-card p-4 shadow-sm', showingHistory && 'hidden')}
           onSubmit={submit}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold">
-                {editingId ? 'Editar toner' : 'Nuevo toner'}
-              </h2>
-              <p className="text-sm text-muted-foreground">Selecciona la impresora compatible.</p>
+              <h2 className="text-base font-semibold">Nuevo toner</h2>
+              <p className="text-sm text-muted-foreground">Registra el modelo, color e impresora compatible.</p>
             </div>
-            {editingId ? (
-              <Button
-                aria-label="Cancelar edición"
-                onClick={resetForm}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <X />
-              </Button>
-            ) : null}
           </div>
           <div className="mt-4 grid gap-4">
             <label className="grid gap-2 text-sm font-medium">
               Modelo
-              <input
-                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, model: event.target.value }))
-                }
-                value={form.model}
-              />
+              <div className="flex h-10 overflow-hidden rounded-md border bg-background transition focus-within:ring-2 focus-within:ring-ring">
+                <span className="flex items-center border-r bg-sky-50 px-3 font-mono text-sm font-bold text-[#0b2347]">
+                  TK-
+                </span>
+                <input
+                  aria-label="Modelo del toner"
+                  className="min-w-0 flex-1 bg-transparent px-3 text-sm font-normal outline-none"
+                  maxLength={117}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      model: tonerModelSuffix(event.target.value),
+                    }))
+                  }
+                  placeholder="Completa el modelo"
+                  required
+                  value={form.model}
+                />
+              </div>
             </label>
             <label className="grid gap-2 text-sm font-medium">
               Color
@@ -3605,56 +3812,86 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
             </label>
             <label className="grid gap-2 text-sm font-medium">
               Impresora
-              <select
+              <input
                 className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onChange={(event) =>
-                  setForm((current) => ({ ...current, printerId: event.target.value }))
+                  setForm((current) => ({ ...current, printerName: event.target.value }))
                 }
-                value={form.printerId}
-              >
-                <option value="">Selecciona una impresora</option>
-                {printers.map((printer) => (
-                  <option key={printer.id} value={printer.id}>
-                    {printer.model} · {printer.serialNumber} · {printer.area}
-                  </option>
-                ))}
-              </select>
+                maxLength={500}
+                placeholder="ECOSYS M3145idn"
+                required
+                value={form.printerName}
+              />
             </label>
-            {printers.length === 0 ? (
-              <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                Registra primero una impresora para asociar el toner.
-              </p>
-            ) : null}
+            <label className="grid gap-2 text-sm font-medium">
+              Cantidad
+              <div className="flex h-10 w-fit items-center overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm focus-within:ring-2 focus-within:ring-teal-200 sm:h-11">
+                <Button
+                  aria-label="Reducir cantidad"
+                  className="h-full w-9 rounded-none border-0 bg-slate-50 px-0 text-slate-700 shadow-none hover:bg-teal-50 hover:text-teal-800 sm:w-11"
+                  disabled={Number(form.quantity) <= 1}
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      quantity: String(Math.max(1, (Number(current.quantity) || 1) - 1)),
+                    }))
+                  }
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <Minus />
+                </Button>
+                <input
+                  aria-label="Cantidad de toners"
+                  className="h-full w-14 appearance-none border-x border-slate-200 bg-transparent text-center text-base font-bold text-[#0b2347] outline-none sm:w-20"
+                  inputMode="numeric"
+                  min={1}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, quantity: event.target.value }))
+                  }
+                  required
+                  step={1}
+                  type="number"
+                  value={form.quantity}
+                />
+                <Button
+                  aria-label="Aumentar cantidad"
+                  className="h-full w-9 rounded-none border-0 bg-slate-50 px-0 text-slate-700 shadow-none hover:bg-teal-50 hover:text-teal-800 sm:w-11"
+                  onClick={() =>
+                    setForm((current) => ({
+                      ...current,
+                      quantity: String((Number(current.quantity) || 0) + 1),
+                    }))
+                  }
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <Plus />
+                </Button>
+              </div>
+            </label>
             {formError ? (
               <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                 {formError}
               </p>
             ) : null}
-            <Button disabled={saveMutation.isPending || printers.length === 0} type="submit">
-              {saveMutation.isPending ? (
-                'Guardando...'
-              ) : editingId ? (
-                <>
-                  <Edit3 />
-                  Guardar cambios
-                </>
-              ) : (
-                <>
-                  <Plus />
-                  Registrar toner
-                </>
-              )}
+            <Button disabled={saveMutation.isPending} type="submit">
+              {saveMutation.isPending ? 'Guardando...' : <><Plus /> Registrar toner</>}
             </Button>
           </div>
         </form>
         <section
           data-pane="list"
-          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
+          className={cn(
+            'min-w-0 overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-lg shadow-slate-900/5',
+            showingHistory && 'hidden',
+          )}
         >
           <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold">Directorio de toners</h2>
-              <p className="text-sm text-muted-foreground">{filteredToners.length} registro(s)</p>
             </div>
             <label className="flex h-10 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
               <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -3671,88 +3908,89 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
           <RecordCards
             items={filteredToners}
             getKey={(toner) => toner.id}
-            title={(toner) => toner.model}
-            subtitle={(toner) => toner.color}
+            title={(toner) => (
+              <span className="font-mono text-xl font-extrabold tracking-wide text-[#0b2347] sm:text-2xl">
+                {toner.model}
+              </span>
+            )}
+            subtitle={(toner) => (
+              <span
+                className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ring-inset ${tonerColorClass(toner.color)}`}
+              >
+                {toner.color}
+              </span>
+            )}
             fields={[
               {
-                label: 'Impresora',
-                render: (toner) => `${toner.printer.model} · ${toner.printer.serialNumber}`,
+                label: 'Cantidad',
+                render: (toner) => (
+                  <span className="inline-flex items-center gap-2 rounded-xl bg-teal-50 px-3 py-2 text-teal-900 ring-1 ring-inset ring-teal-200">
+                    <Boxes className="size-4" />
+                    <strong className="text-lg">{toner.quantity}</strong>
+                    <span className="text-xs font-semibold">en stock</span>
+                  </span>
+                ),
               },
-              { label: 'Área', render: (toner) => toner.printer.area },
-              { label: 'Creado por', render: (toner) => toner.createdBy.name },
-              { label: 'Editado por', render: (toner) => toner.updatedBy.name },
+              {
+                label: 'Impresora',
+                render: (toner) => (
+                  <span className="inline-flex items-center gap-2 font-semibold text-slate-700">
+                    <Printer className="size-4 shrink-0 text-sky-700" />
+                    {toner.printerName}
+                  </span>
+                ),
+              },
             ]}
             actions={(toner) => (
-              <>
-                <Button onClick={() => editToner(toner)} type="button" variant="outline">
-                  <Edit3 /> Editar
-                </Button>
-                <Button
-                  disabled={deleteMutation.isPending}
-                  onClick={() => void removeToner(toner)}
-                  type="button"
-                  variant="destructive"
-                >
-                  <Trash2 /> Eliminar
-                </Button>
-              </>
+              <div className="record-card-actions flex flex-wrap gap-2">
+                <Button aria-label={`Agregar toner de ${toner.model}`} className="min-h-11 rounded-xl border border-emerald-200 bg-gradient-to-b from-white to-emerald-50 font-bold text-emerald-800 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:from-emerald-50 hover:to-emerald-100 hover:shadow-md" onClick={() => openStockDialog(toner, 'add')} type="button" variant="outline"><Plus /> Agregar</Button>
+                <Button aria-label={`Instalar toner ${toner.model}`} className="min-h-11 rounded-xl border border-sky-200 bg-gradient-to-b from-white to-sky-50 font-bold text-sky-800 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:from-sky-50 hover:to-sky-100 hover:shadow-md" onClick={() => openStockDialog(toner, 'remove')} type="button" variant="outline"><Printer /> Instalar</Button>
+              </div>
             )}
             emptyMessage="No se encontraron toners."
+            cardClassName={(toner) => tonerCardStyle(toner.color).card}
+            headerClassName={(toner) => tonerCardStyle(toner.color).header}
           />
           <div className="hidden overflow-x-auto xl:block">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
+            <table className="w-full min-w-[1000px] text-sm">
+              <thead className="bg-gradient-to-r from-sky-50 via-white to-teal-50 text-left text-xs uppercase text-slate-500">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Modelo</th>
                   <th className="px-4 py-3 font-semibold">Color</th>
                   <th className="px-4 py-3 font-semibold">Impresora</th>
-                  <th className="px-4 py-3 font-semibold">Auditoría</th>
+                  <th className="px-4 py-3 font-semibold">Cantidad</th>
                   <th className="px-4 py-3 text-right font-semibold">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {filteredToners.map((toner) => (
                   <tr
-                    className={editingId === toner.id ? 'bg-secondary/70' : undefined}
+                    className="transition-colors hover:bg-sky-50/60"
                     key={toner.id}
                   >
-                    <td className="px-4 py-3 font-medium">{toner.model}</td>
+                    <td className="px-4 py-3 font-mono text-base font-extrabold tracking-wide text-[#0b2347]">
+                      {toner.model}
+                    </td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex rounded-md border bg-background px-2 py-1 text-xs font-semibold">
+                      <span
+                        className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ring-inset ${tonerColorClass(toner.color)}`}
+                      >
                         {toner.color}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <div>{toner.printer.model}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {toner.printer.serialNumber} · {toner.printer.area}
-                      </div>
+                    <td className="px-4 py-3 font-medium text-slate-700">
+                      {toner.printerName}
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      <div>Creó: {toner.createdBy.name}</div>
-                      <div>Editó: {toner.updatedBy.name}</div>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center gap-2 rounded-xl bg-teal-50 px-3 py-1.5 text-teal-900 ring-1 ring-inset ring-teal-200">
+                        <Boxes className="size-4" />
+                        <strong className="text-base">{toner.quantity}</strong>
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          aria-label={`Editar ${toner.model}`}
-                          onClick={() => editToner(toner)}
-                          size="icon"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Edit3 />
-                        </Button>
-                        <Button
-                          aria-label={`Eliminar ${toner.model}`}
-                          disabled={deleteMutation.isPending}
-                          onClick={() => void removeToner(toner)}
-                          size="icon"
-                          type="button"
-                          variant="destructive"
-                        >
-                          <Trash2 />
-                        </Button>
+                        <Button aria-label={`Agregar toner al stock de ${toner.model}`} className="rounded-lg border-emerald-200 bg-emerald-50 font-semibold text-emerald-800 shadow-sm hover:bg-emerald-100" onClick={() => openStockDialog(toner, 'add')} size="sm" type="button" variant="outline"><Plus /> Agregar</Button>
+                        <Button aria-label={`Instalar toner ${toner.model}`} className="rounded-lg border-sky-200 bg-sky-50 font-semibold text-sky-800 shadow-sm hover:bg-sky-100" onClick={() => openStockDialog(toner, 'remove')} size="sm" type="button" variant="outline"><Printer /> Instalar</Button>
                       </div>
                     </td>
                   </tr>
@@ -3769,6 +4007,72 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
           </div>
         </section>
       </section>
+      {showingHistory ? (
+        <section data-pane="history" className="mt-4 overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-lg shadow-slate-900/5">
+          <div className="border-b bg-gradient-to-r from-sky-50 via-white to-teal-50 p-4 sm:p-5">
+            <h2 className="text-lg font-bold text-slate-900">Historial de instalaciones</h2>
+            <p className="mt-1 text-sm text-slate-600">Salidas de toner, impresora, usuario y fecha de cada registro.</p>
+          </div>
+          <div className="grid gap-3 p-4 sm:p-5">
+            {historyQuery.isLoading ? <p className="rounded-xl bg-slate-50 p-5 text-center text-sm text-slate-600">Cargando historial...</p> : null}
+            {historyQuery.error ? <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{historyQuery.error.message}</p> : null}
+            {!historyQuery.isLoading && !historyQuery.error && historyQuery.data?.length === 0 ? <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-600">Aun no hay toners instalados.</p> : null}
+            {historyQuery.data?.map((movement) => (
+              <article className="grid gap-3 rounded-xl border border-sky-100 bg-gradient-to-br from-white to-sky-50 p-4 sm:grid-cols-[minmax(140px,0.8fr)_minmax(0,2fr)] sm:items-center" key={movement.id}>
+                <div className="flex items-center justify-between gap-3 sm:block">
+                  <div><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Toner</p><strong className="mt-1 block font-mono text-lg text-slate-900">{movement.tonerModel}</strong></div>
+                  <span className="rounded-full bg-amber-100 px-3 py-1.5 text-sm font-bold text-amber-900">-{movement.quantity}</span>
+                </div>
+                <dl className="grid gap-3 text-sm sm:grid-cols-3">
+                  <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Impresora</dt><dd className="mt-1 break-words font-medium text-slate-800">{movement.printerName}</dd></div>
+                  <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Usuario</dt><dd className="mt-1 font-medium text-slate-800">{movement.userName}</dd></div>
+                  <div><dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Fecha y hora</dt><dd className="mt-1 font-medium text-slate-800">{new Date(movement.createdAt).toLocaleString('es-MX')}</dd></div>
+                </dl>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {stockAction && activeToner ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) closeStockDialog(); }}>
+          <section aria-labelledby="toner-action-title" aria-modal="true" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl" role="dialog">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-teal-700">{activeToner.model}</p>
+                <h2 className="mt-1 text-xl font-bold text-slate-900" id="toner-action-title">{stockAction === 'add' ? 'Agregar toner al stock' : 'Instalar toner'}</h2>
+              </div>
+              <Button aria-label="Cerrar" onClick={closeStockDialog} size="icon" type="button" variant="ghost"><X /></Button>
+            </div>
+            <form className="mt-5 grid gap-4" onSubmit={submitStockAction}>
+              <label className="grid gap-2 text-sm font-semibold text-slate-800">
+                Cantidad
+                <div className="flex h-12 w-fit items-center overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm focus-within:ring-2 focus-within:ring-teal-200">
+                  <Button aria-label="Reducir cantidad" className="h-full w-12 rounded-none border-0 bg-slate-50 px-0 text-slate-700 shadow-none hover:bg-teal-50 hover:text-teal-800" disabled={Number(stockQuantity) <= 1} onClick={() => setStockQuantity(String(Math.max(1, (Number(stockQuantity) || 1) - 1)))} size="sm" type="button" variant="outline"><Minus /></Button>
+                  <input aria-label="Cantidad de toner" className="h-full w-16 border-x border-slate-200 bg-transparent text-center text-lg font-bold text-[#0b2347] outline-none" inputMode="numeric" min={1} onChange={(event) => setStockQuantity(event.target.value)} required step={1} type="number" value={stockQuantity} />
+                  <Button aria-label="Aumentar cantidad" className="h-full w-12 rounded-none border-0 bg-slate-50 px-0 text-slate-700 shadow-none hover:bg-teal-50 hover:text-teal-800" onClick={() => setStockQuantity(String((Number(stockQuantity) || 0) + 1))} size="sm" type="button" variant="outline"><Plus /></Button>
+                </div>
+              </label>
+              {stockAction === 'remove' ? (
+                <label className="grid gap-2 text-sm font-semibold text-slate-800">Impresora donde se instalo
+                  <select className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" onChange={(event) => setSelectedPrinterId(event.target.value)} required value={selectedPrinterId}>
+                    <option value="">{printersQuery.isLoading ? 'Cargando impresoras...' : 'Selecciona una impresora'}</option>
+                    {printersQuery.data?.map((printer) => <option key={printer.id} value={printer.id}>{printer.model} - {printer.area} - {printer.serialNumber}{printer.ip ? ` - ${printer.ip}` : ""}</option>)}
+                  </select>
+                  {printersQuery.error ? <span className="text-xs font-normal text-red-700">{printersQuery.error.message}</span> : null}
+                  {!printersQuery.isLoading && !printersQuery.error && printersQuery.data?.length === 0 ? <span className="text-xs font-normal text-amber-800">No hay impresoras registradas.</span> : null}
+                </label>
+              ) : null}
+              {stockError ? <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{stockError}</p> : null}
+              <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button className="rounded-xl" onClick={closeStockDialog} type="button" variant="outline">Cancelar</Button>
+                <Button className={stockAction === 'add' ? 'rounded-xl bg-gradient-to-r from-emerald-700 to-teal-700 font-semibold shadow-md hover:from-emerald-800 hover:to-teal-800' : 'rounded-xl bg-gradient-to-r from-sky-700 to-blue-800 font-semibold shadow-md hover:from-sky-800 hover:to-blue-900'} disabled={stockMutation.isPending || (stockAction === 'remove' && (!selectedPrinterId || printersQuery.isLoading || !printersQuery.data?.length))} type="submit">
+                  {stockMutation.isPending ? 'Guardando...' : stockAction === 'add' ? <><Plus /> Agregar al stock</> : <><Printer /> Confirmar instalacion</>}
+                </Button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -3910,25 +4214,6 @@ function ComputerEquipmentView({ request }: { request: AuthenticatedRequest }) {
         </p>
       ) : null}
 
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <UserMetric icon={Laptop} label="Equipos registrados" value={equipment.length} />
-        <UserMetric
-          icon={Network}
-          label="Con IP asignada"
-          value={equipment.filter((item) => item.ip).length}
-        />
-        <UserMetric
-          icon={Building2}
-          label="Ubicaciones"
-          value={new Set(equipment.map((item) => item.location)).size}
-        />
-        <UserMetric
-          icon={Users}
-          label="Responsables"
-          value={new Set(equipment.map((item) => item.responsible)).size}
-        />
-      </section>
-
       {formError && workspace.pane === 'list' ? (
         <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {formError}
@@ -3951,7 +4236,7 @@ function ComputerEquipmentView({ request }: { request: AuthenticatedRequest }) {
         />
       </div>
       <section
-        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(360px,460px)_minmax(0,1fr)]"
+        className="module-workspace-wide mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(360px,460px)_minmax(0,1fr)]"
         data-mobile-pane={workspace.pane}
       >
         <form
@@ -4105,9 +4390,6 @@ function ComputerEquipmentView({ request }: { request: AuthenticatedRequest }) {
           <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold">Directorio de equipos</h2>
-              <p className="text-sm text-muted-foreground">
-                {filteredEquipment.length} registro(s)
-              </p>
             </div>
             <label className="flex h-10 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
               <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -4234,7 +4516,6 @@ function ExtensionsView({ request }: { request: AuthenticatedRequest }) {
   const queryClient = useQueryClient();
   const workspace = useModuleWorkspace();
   const [searchTerm, setSearchTerm] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ExtensionFormState>(emptyExtensionForm);
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
@@ -4242,57 +4523,34 @@ function ExtensionsView({ request }: { request: AuthenticatedRequest }) {
     queryKey: ['extensions'],
     queryFn: () => request<ApiExtension[]>('/extensions'),
   });
+  const areasQuery = useQuery({
+    queryKey: ['areas'],
+    queryFn: () => request<ApiArea[]>('/areas'),
+  });
   const saveMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string | null; body: ExtensionFormState }) =>
-      request<ApiExtension>(id ? `/extensions/${id}` : '/extensions', {
-        method: id ? 'PATCH' : 'POST',
+    mutationFn: (body: ExtensionFormState) =>
+      request<ApiExtension>('/extensions', {
+        method: 'POST',
         body: JSON.stringify(body),
       }),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['extensions'] }),
   });
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => request<void>(`/extensions/${id}`, { method: 'DELETE' }),
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['extensions'] }),
-  });
   const extensions = extensionsQuery.data ?? [];
+  const registeredAreas = [...(areasQuery.data ?? [])].sort((first, second) =>
+    first.name.localeCompare(second.name, 'es'),
+  );
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es');
   const filteredExtensions = extensions.filter((item) =>
-    [item.extension, item.description, item.area].some((value) =>
+    [item.extension, item.area, item.description].some((value) =>
       value.toLocaleLowerCase('es').includes(normalizedSearch),
     ),
   );
 
   function resetForm() {
-    setEditingId(null);
     setForm(emptyExtensionForm);
     setFormError('');
     setFormSuccess('');
     workspace.showList();
-  }
-
-  function startNew() {
-    resetForm();
-    workspace.showForm();
-  }
-
-  function editExtension(item: ApiExtension) {
-    setEditingId(item.id);
-    setForm({ extension: item.extension, description: item.description, area: item.area });
-    setFormError('');
-    setFormSuccess('');
-    workspace.showForm();
-  }
-
-  async function removeExtension(item: ApiExtension) {
-    if (!window.confirm(`Dar de baja la extensión ${item.extension}?`)) return;
-    try {
-      await deleteMutation.mutateAsync(item.id);
-      if (editingId === item.id) resetForm();
-    } catch (error) {
-      setFormError(
-        error instanceof Error ? error.message : 'No fue posible dar de baja la extensión.',
-      );
-    }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -4302,15 +4560,18 @@ function ExtensionsView({ request }: { request: AuthenticatedRequest }) {
       description: form.description.trim(),
       area: form.area.trim(),
     };
+    if (body.extension && !/^\d+$/.test(body.extension)) {
+      setFormError('La extension debe contener solo numeros.');
+      return;
+    }
     if (!body.extension || !body.description || !body.area) {
       setFormError('Extensión, descripción y área son obligatorios.');
       return;
     }
     try {
-      const wasEditing = Boolean(editingId);
-      await saveMutation.mutateAsync({ id: editingId, body });
+      await saveMutation.mutateAsync(body);
       resetForm();
-      setFormSuccess(wasEditing ? 'Extensión actualizada.' : 'Extensión registrada.');
+      setFormSuccess('Extensión registrada.');
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'No fue posible guardar la extensión.');
     }
@@ -4325,9 +4586,6 @@ function ExtensionsView({ request }: { request: AuthenticatedRequest }) {
             Directorio de extensiones telefónicas por área.
           </p>
         </div>
-        <Button onClick={startNew} variant="outline">
-          <Plus /> Nueva extensión
-        </Button>
       </header>
       {extensionsQuery.isLoading ? (
         <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
@@ -4339,19 +4597,6 @@ function ExtensionsView({ request }: { request: AuthenticatedRequest }) {
           {extensionsQuery.error.message}
         </p>
       ) : null}
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <UserMetric icon={Phone} label="Extensiones registradas" value={extensions.length} />
-        <UserMetric
-          icon={Building2}
-          label="Áreas"
-          value={new Set(extensions.map((item) => item.area)).size}
-        />
-        <UserMetric
-          icon={CheckCircle2}
-          label="Con descripción"
-          value={extensions.filter((item) => Boolean(item.description)).length}
-        />
-      </section>
       {formError && workspace.pane === 'list' ? (
         <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {formError}
@@ -4370,49 +4615,52 @@ function ExtensionsView({ request }: { request: AuthenticatedRequest }) {
           pane={workspace.pane}
           onShowList={workspace.showList}
           onShowForm={workspace.showForm}
-          formLabel={editingId ? 'Editar' : 'Nuevo'}
+          formLabel="Nuevo"
+          showOnDesktop
+          className="border-teal-200 bg-gradient-to-r from-white via-teal-50/70 to-sky-50/70 shadow-md shadow-teal-900/5"
+          activeTabClassName="bg-gradient-to-r from-[#0b2347] to-teal-700 shadow-md shadow-teal-900/15"
+          inactiveTabClassName="text-slate-600 hover:bg-teal-100/70 hover:text-teal-900"
         />
       </div>
       <section
-        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
+        className="extension-workspace mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
         data-mobile-pane={workspace.pane}
       >
         <form
           data-pane="form"
-          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
+          className="min-w-0 rounded-2xl border border-teal-100 bg-gradient-to-br from-white via-white to-teal-50/60 p-4 shadow-lg shadow-slate-900/5"
           onSubmit={submit}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold">
-                {editingId ? 'Editar extensión' : 'Nueva extensión'}
-              </h2>
+              <h2 className="text-base font-semibold">Nueva extensión</h2>
               <p className="text-sm text-muted-foreground">
                 Registra la información telefónica del área.
               </p>
             </div>
-            {editingId ? (
-              <Button onClick={resetForm} size="sm" type="button" variant="ghost">
-                <X /> Cancelar
-              </Button>
-            ) : null}
           </div>
           <div className="mt-4 grid gap-3">
             <label className="grid gap-1.5 text-sm font-medium">
               Extensión
               <input
-                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-teal-400 focus-visible:ring-4 focus-visible:ring-teal-100"
+                inputMode="numeric"
                 onChange={(event) =>
-                  setForm((current) => ({ ...current, extension: event.target.value }))
+                  setForm((current) => ({
+                    ...current,
+                    extension: event.target.value.replace(/\D/g, ''),
+                  }))
                 }
+                pattern="[0-9]*"
                 required
+                type="text"
                 value={form.extension}
               />
             </label>
             <label className="grid gap-1.5 text-sm font-medium">
               Descripción
               <textarea
-                className="min-h-24 resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="min-h-24 resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-teal-400 focus-visible:ring-4 focus-visible:ring-teal-100"
                 onChange={(event) =>
                   setForm((current) => ({ ...current, description: event.target.value }))
                 }
@@ -4422,14 +4670,42 @@ function ExtensionsView({ request }: { request: AuthenticatedRequest }) {
             </label>
             <label className="grid gap-1.5 text-sm font-medium">
               Área
-              <input
-                className="h-10 rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              <select
+                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-teal-400 focus-visible:ring-4 focus-visible:ring-teal-100"
+                disabled={areasQuery.isLoading || (registeredAreas.length === 0 && !form.area)}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, area: event.target.value }))
                 }
                 required
                 value={form.area}
-              />
+              >
+                <option value="">
+                  {areasQuery.isLoading
+                    ? 'Cargando áreas...'
+                    : areasQuery.error
+                      ? 'No se pudieron cargar las áreas'
+                      : registeredAreas.length === 0
+                        ? 'No hay áreas registradas'
+                        : 'Selecciona un área'}
+                </option>
+                {form.area && !registeredAreas.some((area) => area.name === form.area) ? (
+                  <option value={form.area}>{form.area} (actual)</option>
+                ) : null}
+                {registeredAreas.map((area) => (
+                  <option key={area.id} value={area.name}>
+                    {area.name}
+                  </option>
+                ))}
+              </select>
+              {areasQuery.error ? (
+                <span className="text-xs font-normal text-destructive">
+                  {areasQuery.error.message}
+                </span>
+              ) : !areasQuery.isLoading && registeredAreas.length === 0 && !form.area ? (
+                <span className="text-xs font-normal text-muted-foreground">
+                  Registra un área en el módulo Áreas para poder asignarla.
+                </span>
+              ) : null}
             </label>
           </div>
           {formError && workspace.pane === 'form' ? (
@@ -4440,38 +4716,29 @@ function ExtensionsView({ request }: { request: AuthenticatedRequest }) {
               {formError}
             </p>
           ) : null}
-          <Button className="mt-4 w-full" disabled={saveMutation.isPending} type="submit">
-            {saveMutation.isPending ? (
-              'Guardando...'
-            ) : editingId ? (
-              <>
-                <Edit3 /> Guardar cambios
-              </>
-            ) : (
-              <>
-                <Plus /> Registrar extensión
-              </>
-            )}
+          <Button
+            className="mt-5 h-12 w-full bg-gradient-to-r from-[#0b2347] via-sky-800 to-teal-700 shadow-md shadow-teal-900/15 transition-all hover:-translate-y-0.5 hover:from-[#082044] hover:via-sky-900 hover:to-teal-800 hover:shadow-lg"
+            disabled={saveMutation.isPending}
+            type="submit"
+          >
+            {saveMutation.isPending ? 'Guardando...' : <><Plus /> Registrar extensión</>}
           </Button>
         </form>
         <section
           data-pane="list"
-          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
+          className="min-w-0 overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-lg shadow-slate-900/5"
         >
           <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold">Directorio de extensiones</h2>
-              <p className="text-sm text-muted-foreground">
-                {filteredExtensions.length} registro(s)
-              </p>
             </div>
-            <label className="flex h-10 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
-              <Search className="size-4 shrink-0 text-muted-foreground" />
+            <label className="flex h-11 w-full items-center gap-2 rounded-xl border border-slate-200 bg-gradient-to-r from-white to-sky-50/70 px-3 shadow-inner transition focus-within:border-sky-400 focus-within:ring-4 focus-within:ring-sky-100 sm:max-w-80">
+              <Search className="size-4 shrink-0 text-sky-700" />
               <span className="sr-only">Buscar extensiones</span>
               <input
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Buscar extensión o área"
+                placeholder="Buscar"
                 type="search"
                 value={searchTerm}
               />
@@ -4480,89 +4747,52 @@ function ExtensionsView({ request }: { request: AuthenticatedRequest }) {
           <RecordCards
             items={filteredExtensions}
             getKey={(item) => item.id}
-            title={(item) => `Extensión ${item.extension}`}
-            subtitle={(item) => item.area}
-            fields={[
-              { label: 'Descripción', render: (item) => item.description },
-              { label: 'Área', render: (item) => item.area },
-              { label: 'Creado por', render: (item) => item.createdBy.name },
-              { label: 'Editado por', render: (item) => item.updatedBy.name },
-            ]}
-            actions={(item) => (
-              <>
-                <Button onClick={() => editExtension(item)} type="button" variant="outline">
-                  <Edit3 /> Editar
-                </Button>
-                <Button
-                  disabled={deleteMutation.isPending}
-                  onClick={() => void removeExtension(item)}
-                  type="button"
-                  variant="destructive"
-                >
-                  <Trash2 /> Eliminar
-                </Button>
-              </>
+            title={(item) => (
+              <div className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-gradient-to-r from-[#0b2347] to-sky-800 px-2.5 py-1 font-mono text-base font-bold tracking-wide text-white shadow-sm shadow-sky-900/15 sm:text-lg">
+                  <Phone className="size-4 sm:size-5" />
+                  {item.extension}
+                </span>
+                <span className="shrink-0 text-slate-400">-</span>
+                <span className="min-w-0 truncate text-sm font-semibold leading-snug text-slate-800 sm:text-base">
+                  {item.description}
+                </span>
+              </div>
             )}
+            subtitle={(item) => (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800 ring-1 ring-inset ring-teal-200">
+                <Building2 className="size-3.5" />
+                {item.area}
+              </span>
+            )}
+            fields={[]}
             emptyMessage="No se encontraron extensiones."
+            cardClassName="border-sky-100 shadow-md shadow-slate-900/5 hover:-translate-y-0.5 hover:border-teal-300 hover:shadow-lg hover:shadow-teal-900/10"
+            headerClassName="border-sky-100 bg-gradient-to-br from-sky-50/90 via-white to-teal-50/80"
+            listClassName="md:grid-cols-1"
           />
-          <div className="hidden overflow-x-auto xl:block">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Extensión</th>
-                  <th className="px-4 py-3 font-semibold">Descripción</th>
-                  <th className="px-4 py-3 font-semibold">Área</th>
-                  <th className="px-4 py-3 font-semibold">Auditoría</th>
-                  <th className="px-4 py-3 text-right font-semibold">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filteredExtensions.map((item) => (
-                  <tr
-                    className={editingId === item.id ? 'bg-secondary/70' : undefined}
-                    key={item.id}
-                  >
-                    <td className="px-4 py-3 font-mono font-medium">{item.extension}</td>
-                    <td className="max-w-sm px-4 py-3 text-muted-foreground">{item.description}</td>
-                    <td className="px-4 py-3">{item.area}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      <div>Creado: {item.createdBy.name}</div>
-                      <div>Editado: {item.updatedBy.name}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          aria-label={`Editar ${item.extension}`}
-                          onClick={() => editExtension(item)}
-                          size="icon"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Edit3 />
-                        </Button>
-                        <Button
-                          aria-label={`Eliminar ${item.extension}`}
-                          disabled={deleteMutation.isPending}
-                          onClick={() => void removeExtension(item)}
-                          size="icon"
-                          type="button"
-                          variant="destructive"
-                        >
-                          <Trash2 />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {filteredExtensions.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={5}>
-                      No se encontraron extensiones.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
+          <div className="hidden divide-y divide-slate-100 xl:block">
+            {filteredExtensions.map((item) => (
+              <article
+                className="group relative grid grid-cols-[minmax(110px,0.18fr)_minmax(0,1fr)_minmax(130px,0.22fr)] items-center gap-6 border-l-4 border-l-teal-400 bg-gradient-to-r from-teal-50/50 via-white to-white px-5 py-4 transition-all hover:border-l-sky-600 hover:from-sky-50 hover:via-white hover:shadow-sm"
+                key={item.id}
+              >
+                <p className="inline-flex w-fit items-center gap-2 rounded-xl bg-gradient-to-r from-[#0b2347] to-sky-800 px-3.5 py-2 font-mono text-lg font-bold tracking-wide text-white shadow-sm shadow-sky-900/15 transition-transform group-hover:scale-[1.03]">
+                  <Phone className="size-4" />
+                  {item.extension}
+                </p>
+                <p className="min-w-0 text-sm font-medium leading-6 text-slate-700">{item.description}</p>
+                <span className="inline-flex max-w-56 items-center gap-1.5 justify-self-end truncate rounded-full bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 ring-1 ring-inset ring-teal-200">
+                  <Building2 className="size-3.5 shrink-0" />
+                  {item.area}
+                </span>
+              </article>
+            ))}
+            {filteredExtensions.length === 0 ? (
+              <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                No se encontraron extensiones.
+              </p>
+            ) : null}
           </div>
         </section>
       </section>
@@ -4582,6 +4812,10 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
     queryKey: ['printers'],
     queryFn: () => request<ApiPrinter[]>('/printers'),
   });
+  const areasQuery = useQuery({
+    queryKey: ['areas'],
+    queryFn: () => request<ApiArea[]>('/areas'),
+  });
   const saveMutation = useMutation({
     mutationFn: ({ id, body }: { id: string | null; body: PrinterFormState }) =>
       request<ApiPrinter>(id ? `/printers/${id}` : '/printers', {
@@ -4595,9 +4829,12 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['printers'] }),
   });
   const printers = printersQuery.data ?? [];
+  const registeredAreas = [...(areasQuery.data ?? [])].sort((first, second) =>
+    first.name.localeCompare(second.name, 'es'),
+  );
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es');
   const filteredPrinters = printers.filter((printer) =>
-    [printer.area, printer.model, printer.serialNumber, printer.responsible, printer.status].some(
+    [printer.area, printer.model, printer.serialNumber, printer.ip ?? '', printer.responsible, printer.status].some(
       (value) => value.toLocaleLowerCase('es').includes(normalizedSearch),
     ),
   );
@@ -4621,6 +4858,7 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
       area: printer.area,
       model: printer.model,
       serialNumber: printer.serialNumber,
+      ip: printer.ip ?? '',
       status: printer.status,
       responsible: printer.responsible,
       installationDate: printer.installationDate.slice(0, 10),
@@ -4649,12 +4887,14 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
       area: form.area.trim(),
       model: form.model.trim(),
       serialNumber: form.serialNumber.trim(),
+      ip: form.ip.trim(),
       responsible: form.responsible.trim(),
     };
     if (
       !body.area ||
       !body.model ||
       !body.serialNumber ||
+      !body.ip ||
       !body.responsible ||
       !body.installationDate
     ) {
@@ -4683,41 +4923,18 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
             Control de impresoras, responsables, instalación y trazabilidad de cambios.
           </p>
         </div>
-        <Button onClick={startNew} variant="outline">
-          <Plus />
-          Nueva impresora
-        </Button>
       </header>
 
-      {printersQuery.isLoading ? (
+      {printersQuery.isLoading || areasQuery.isLoading ? (
         <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
           Cargando impresoras...
         </p>
       ) : null}
-      {printersQuery.error ? (
+      {printersQuery.error || areasQuery.error ? (
         <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
-          {printersQuery.error.message}
+          {printersQuery.error?.message ?? areasQuery.error?.message}
         </p>
       ) : null}
-
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <UserMetric icon={Printer} label="Registradas" value={printers.length} />
-        <UserMetric
-          icon={CheckCircle2}
-          label="Activas"
-          value={printers.filter((item) => item.status === 'ACTIVA').length}
-        />
-        <UserMetric
-          icon={AlertTriangle}
-          label="En reparación"
-          value={printers.filter((item) => item.status === 'REPARACION').length}
-        />
-        <UserMetric
-          icon={Users}
-          label="Áreas cubiertas"
-          value={new Set(printers.map((item) => item.area)).size}
-        />
-      </section>
 
       {formError && workspace.pane === 'list' ? (
         <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
@@ -4773,11 +4990,40 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
           <div className="mt-4 grid gap-4">
             <label className="grid gap-2 text-sm font-medium">
               Área
-              <input
+              <select
                 className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                disabled={areasQuery.isLoading || (registeredAreas.length === 0 && !form.area)}
                 onChange={(event) => updateField('area', event.target.value)}
+                required
                 value={form.area}
-              />
+              >
+                <option value="">
+                  {areasQuery.isLoading
+                    ? 'Cargando áreas...'
+                    : areasQuery.error
+                      ? 'No se pudieron cargar las áreas'
+                      : registeredAreas.length === 0
+                        ? 'No hay áreas registradas'
+                        : 'Selecciona un área'}
+                </option>
+                {form.area && !registeredAreas.some((area) => area.name === form.area) ? (
+                  <option value={form.area}>{form.area} (actual)</option>
+                ) : null}
+                {registeredAreas.map((area) => (
+                  <option key={area.id} value={area.name}>
+                    {area.name}
+                  </option>
+                ))}
+              </select>
+              {areasQuery.error ? (
+                <span className="text-xs font-normal text-destructive">
+                  {areasQuery.error.message}
+                </span>
+              ) : !areasQuery.isLoading && registeredAreas.length === 0 && !form.area ? (
+                <span className="text-xs font-normal text-muted-foreground">
+                  Registra un área en el módulo Áreas para poder asignarla.
+                </span>
+              ) : null}
             </label>
             <label className="grid gap-2 text-sm font-medium">
               Modelo
@@ -4793,6 +5039,18 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
                 className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onChange={(event) => updateField('serialNumber', event.target.value)}
                 value={form.serialNumber}
+              />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              IP
+              <input
+                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                inputMode="decimal"
+                onChange={(event) => updateField('ip', event.target.value)}
+                placeholder="192.168.1.100"
+                required
+                type="text"
+                value={form.ip}
               />
             </label>
             <label className="grid gap-2 text-sm font-medium">
@@ -4857,7 +5115,6 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
           <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-semibold">Directorio de impresoras</h2>
-              <p className="text-sm text-muted-foreground">{filteredPrinters.length} registro(s)</p>
             </div>
             <label className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
               <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -4865,7 +5122,7 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
               <input
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Buscar área, modelo o serie"
+                placeholder="Buscar area, modelo, serie o IP"
                 type="search"
                 value={searchTerm}
               />
@@ -4888,8 +5145,7 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
                 label: 'Instalación',
                 render: (printer) => new Date(printer.installationDate).toLocaleDateString('es-MX'),
               },
-              { label: 'Creado por', render: (printer) => printer.createdBy.name },
-              { label: 'Editado por', render: (printer) => printer.updatedBy.name },
+              { label: 'IP', render: (printer) => printer.ip ?? 'Sin IP' },
             ]}
             actions={(printer) => (
               <>
@@ -4909,15 +5165,15 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
             emptyMessage="No se encontraron impresoras."
           />
           <div className="hidden overflow-x-auto xl:block">
-            <table className="w-full min-w-[980px] text-sm">
+            <table className="w-full min-w-[920px] text-sm">
               <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Área</th>
                   <th className="px-4 py-3 font-semibold">Modelo / Serie</th>
+                  <th className="px-4 py-3 font-semibold">IP</th>
                   <th className="px-4 py-3 font-semibold">Responsable</th>
                   <th className="px-4 py-3 font-semibold">Estado</th>
                   <th className="px-4 py-3 font-semibold">Instalación</th>
-                  <th className="px-4 py-3 font-semibold">Auditoría</th>
                   <th className="px-4 py-3 text-right font-semibold">Acciones</th>
                 </tr>
               </thead>
@@ -4934,6 +5190,7 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
                         {printer.serialNumber}
                       </div>
                     </td>
+                    <td className="px-4 py-3 font-mono text-sm text-slate-700">{printer.ip ?? 'Sin IP'}</td>
                     <td className="px-4 py-3 text-muted-foreground">{printer.responsible}</td>
                     <td className="px-4 py-3">
                       <span
@@ -4953,10 +5210,6 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {new Date(printer.installationDate).toLocaleDateString('es-MX')}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      <div>Creó: {printer.createdBy.name}</div>
-                      <div>Editó: {printer.updatedBy.name}</div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
@@ -4998,31 +5251,6 @@ function PrintersView({ request }: { request: AuthenticatedRequest }) {
     </>
   );
 }
-
-function UserMetric({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: number;
-}) {
-  return (
-    <article className="rounded-md border bg-card p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="mt-2 text-3xl font-semibold tracking-normal">{value}</p>
-        </div>
-        <div className="flex size-10 items-center justify-center rounded-md bg-secondary text-primary">
-          <Icon className="size-5" />
-        </div>
-      </div>
-    </article>
-  );
-}
-
 function StatusPill({
   icon: Icon,
   label,

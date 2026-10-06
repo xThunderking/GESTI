@@ -7,6 +7,8 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { CreateTonerDto } from './dto/create-toner.dto';
 import { UpdateTonerDto } from './dto/update-toner.dto';
+import { AdjustTonerStockDto } from './dto/adjust-toner-stock.dto';
+import { RemoveTonerStockDto } from './dto/remove-toner-stock.dto';
 import { TonersService } from './toners.service';
 
 @ApiTags('Toners')
@@ -21,10 +23,34 @@ export class TonersController {
   @ApiOperation({ summary: 'Listar toners activos' })
   findAll() { return this.service.findAll(); }
 
+  @Get('history')
+  @ApiOperation({ summary: 'Consultar historial de instalaciones de toners' })
+  findAllHistory() {
+    return this.service.findAllHistory();
+  }
+
   @Post()
   @ApiOperation({ summary: 'Registrar toner' })
   create(@Body(new ValidationPipe({ expectedType: CreateTonerDto, forbidNonWhitelisted: true, transform: true, whitelist: true })) dto: CreateTonerDto, @CurrentUser() user: AuthenticatedUser) {
     return this.service.create(dto, user.id);
+  }
+
+  @Post(':id/stock/add')
+  @ApiOperation({ summary: 'Agregar toner al stock' })
+  addStock(@Param('id', ParseUUIDPipe) id: string, @Body(new ValidationPipe({ expectedType: AdjustTonerStockDto, forbidNonWhitelisted: true, transform: true, whitelist: true })) dto: AdjustTonerStockDto) {
+    return this.service.addStock(id, dto);
+  }
+
+  @Post(':id/stock/remove')
+  @ApiOperation({ summary: 'Registrar instalacion de toner' })
+  removeStock(@Param('id', ParseUUIDPipe) id: string, @Body(new ValidationPipe({ expectedType: RemoveTonerStockDto, forbidNonWhitelisted: true, transform: true, whitelist: true })) dto: RemoveTonerStockDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.removeStock(id, dto, user.id);
+  }
+
+  @Get(':id/history')
+  @ApiOperation({ summary: 'Consultar historial de instalaciones del toner' })
+  findHistory(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.findHistory(id);
   }
 
   @Patch(':id')

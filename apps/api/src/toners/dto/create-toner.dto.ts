@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsInt, IsString, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateTonerDto {
   @ApiProperty({ example: 'CF258A' })
@@ -14,7 +14,14 @@ export class CreateTonerDto {
   @MaxLength(60)
   color: string;
 
-  @ApiProperty({ description: 'ID de la impresora compatible' })
-  @IsUUID()
-  printerId: string;
+  @ApiProperty({ example: 'HP LaserJet M404' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(500)
+  printerName: string;
+
+  @ApiProperty({ example: 1, minimum: 1 })
+  @IsInt()
+  @Min(1)
+  quantity: number;
 }

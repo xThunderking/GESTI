@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { PrinterStatus } from '../../generated/prisma/client';
-import { IsDateString, IsEnum, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsDateString, IsEnum, IsIP, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreatePrinterDto {
   @ApiProperty({ example: 'Radiologia' })
@@ -20,6 +20,10 @@ export class CreatePrinterDto {
   @MinLength(2)
   @MaxLength(120)
   serialNumber: string;
+
+  @ApiProperty({ example: '192.168.1.100' })
+  @IsIP()
+  ip: string;
 
   @ApiProperty({ enum: PrinterStatus, default: PrinterStatus.ACTIVA })
   @IsEnum(PrinterStatus)

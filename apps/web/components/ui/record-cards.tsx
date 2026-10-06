@@ -1,4 +1,5 @@
 import type { Key, ReactNode } from 'react';
+import { cn } from '@/lib/utils';
 
 type RecordField<T> = {
   label: string;
@@ -13,6 +14,9 @@ type RecordCardsProps<T> = {
   fields: RecordField<T>[];
   actions?: (item: T) => ReactNode;
   emptyMessage: string;
+  cardClassName?: string | ((item: T) => string);
+  headerClassName?: string | ((item: T) => string);
+  listClassName?: string;
 };
 
 /** Mobile and tablet counterpart to a desktop data table. */
@@ -24,22 +28,36 @@ export function RecordCards<T>({
   fields,
   actions,
   emptyMessage,
+  cardClassName,
+  headerClassName,
+  listClassName,
 }: RecordCardsProps<T>) {
   return (
-    <div className="grid gap-3 p-3 md:grid-cols-2 xl:hidden" role="list">
+    <div
+      className={cn('grid gap-4 p-4 md:grid-cols-2 md:gap-5 md:p-5 xl:hidden', listClassName)}
+      role="list"
+    >
       {items.length === 0 ? (
-        <p className="rounded-lg border border-dashed bg-background px-4 py-10 text-center text-sm text-muted-foreground md:col-span-2">
+        <p className="rounded-2xl border border-dashed bg-background px-4 py-12 text-center text-sm text-muted-foreground md:col-span-2">
           {emptyMessage}
         </p>
       ) : (
         items.map((item) => (
           <article
-            className="min-w-0 overflow-hidden rounded-xl border bg-card shadow-sm"
+            className={cn(
+              'min-w-0 overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-200 hover:shadow-md',
+              typeof cardClassName === 'function' ? cardClassName(item) : cardClassName,
+            )}
             key={getKey(item)}
             role="listitem"
           >
-            <div className="min-w-0 border-b bg-secondary/40 px-4 py-3">
-              <h3 className="break-words text-base font-semibold leading-snug text-foreground">
+            <div
+              className={cn(
+                'min-w-0 border-b bg-secondary/40 px-4 py-4 sm:px-5',
+                typeof headerClassName === 'function' ? headerClassName(item) : headerClassName,
+              )}
+            >
+              <h3 className="break-words text-base font-semibold leading-snug text-foreground sm:text-lg">
                 {title(item)}
               </h3>
               {subtitle ? (
@@ -48,21 +66,25 @@ export function RecordCards<T>({
                 </p>
               ) : null}
             </div>
-            <dl className="grid min-w-0 grid-cols-1 gap-x-4 px-4 py-2 lg:grid-cols-2">
-              {fields.map((field) => (
-                <div
-                  className="min-w-0 border-b border-border/60 py-2.5 last:border-b-0"
-                  key={field.label}
-                >
-                  <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {field.label}
-                  </dt>
-                  <dd className="mt-1 break-words text-sm text-foreground">{field.render(item)}</dd>
-                </div>
-              ))}
-            </dl>
+            {fields.length > 0 ? (
+              <dl className="grid min-w-0 grid-cols-1 gap-x-5 px-4 py-2 sm:px-5 lg:grid-cols-2">
+                {fields.map((field) => (
+                  <div
+                    className="min-w-0 border-b border-border/60 py-3 last:border-b-0"
+                    key={field.label}
+                  >
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {field.label}
+                    </dt>
+                    <dd className="mt-1 break-words text-sm text-foreground">
+                      {field.render(item)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
             {actions ? (
-              <div className="record-card-actions flex flex-wrap items-center justify-end gap-2 border-t bg-secondary/30 px-4 py-3">
+              <div className="record-card-actions flex flex-wrap items-center justify-start gap-2 border-t bg-secondary/30 px-4 py-3 sm:justify-end sm:px-5">
                 {actions(item)}
               </div>
             ) : null}

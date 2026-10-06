@@ -44,31 +44,32 @@ model User {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  sessions      AuthSession[]
-  refreshTokens RefreshToken[]
-  roles         UserRole[]
-  printersCreated Printer[] @relation("PrinterCreatedBy")
-  printersUpdated Printer[] @relation("PrinterUpdatedBy")
-  printersDeleted Printer[] @relation("PrinterDeletedBy")
-  areasCreated Areas[] @relation("AreaCreatedBy")
-  areasUpdated Areas[] @relation("AreaUpdatedBy")
-  areasDeleted Areas[] @relation("AreaDeletedBy")
-  towerIpsConfigured TowerIp[] @relation("TowerIpConfiguredBy")
-  towerIpsCreated TowerIp[] @relation("TowerIpCreatedBy")
-  towerIpsUpdated TowerIp[] @relation("TowerIpUpdatedBy")
-  towerIpsDeleted TowerIp[] @relation("TowerIpDeletedBy")
-  haqIpsCreated HaqIp[] @relation("HaqIpCreatedBy")
-  haqIpsUpdated HaqIp[] @relation("HaqIpUpdatedBy")
-  haqIpsDeleted HaqIp[] @relation("HaqIpDeletedBy")
-  extensionsCreated Extension[] @relation("ExtensionCreatedBy")
-  extensionsUpdated Extension[] @relation("ExtensionUpdatedBy")
-  extensionsDeleted Extension[] @relation("ExtensionDeletedBy")
-  emailRequestsCreated EmailRequest[] @relation("EmailRequestCreatedBy")
-  emailRequestsUpdated EmailRequest[] @relation("EmailRequestUpdatedBy")
-  emailRequestsDeleted EmailRequest[] @relation("EmailRequestDeletedBy")
-  tonersCreated Toner[] @relation("TonerCreatedBy")
-  tonersUpdated Toner[] @relation("TonerUpdatedBy")
-  tonersDeleted Toner[] @relation("TonerDeletedBy")
+  sessions                 AuthSession[]
+  refreshTokens            RefreshToken[]
+  roles                    UserRole[]
+  printersCreated          Printer[]           @relation("PrinterCreatedBy")
+  printersUpdated          Printer[]           @relation("PrinterUpdatedBy")
+  printersDeleted          Printer[]           @relation("PrinterDeletedBy")
+  areasCreated             Areas[]             @relation("AreaCreatedBy")
+  areasUpdated             Areas[]             @relation("AreaUpdatedBy")
+  areasDeleted             Areas[]             @relation("AreaDeletedBy")
+  towerIpsConfigured       TowerIp[]           @relation("TowerIpConfiguredBy")
+  towerIpsCreated          TowerIp[]           @relation("TowerIpCreatedBy")
+  towerIpsUpdated          TowerIp[]           @relation("TowerIpUpdatedBy")
+  towerIpsDeleted          TowerIp[]           @relation("TowerIpDeletedBy")
+  haqIpsCreated            HaqIp[]             @relation("HaqIpCreatedBy")
+  haqIpsUpdated            HaqIp[]             @relation("HaqIpUpdatedBy")
+  haqIpsDeleted            HaqIp[]             @relation("HaqIpDeletedBy")
+  extensionsCreated        Extension[]         @relation("ExtensionCreatedBy")
+  extensionsUpdated        Extension[]         @relation("ExtensionUpdatedBy")
+  extensionsDeleted        Extension[]         @relation("ExtensionDeletedBy")
+  emailRequestsCreated     EmailRequest[]      @relation("EmailRequestCreatedBy")
+  emailRequestsUpdated     EmailRequest[]      @relation("EmailRequestUpdatedBy")
+  emailRequestsDeleted     EmailRequest[]      @relation("EmailRequestDeletedBy")
+  tonersCreated            Toner[]             @relation("TonerCreatedBy")
+  tonersUpdated            Toner[]             @relation("TonerUpdatedBy")
+  tonersDeleted            Toner[]             @relation("TonerDeletedBy")
+  tonerMovements           TonerMovement[]
   computerEquipmentCreated ComputerEquipment[] @relation("ComputerEquipmentCreatedBy")
   computerEquipmentUpdated ComputerEquipment[] @relation("ComputerEquipmentUpdatedBy")
   computerEquipmentDeleted ComputerEquipment[] @relation("ComputerEquipmentDeletedBy")
@@ -108,26 +109,26 @@ model EmailRequest {
 }
 
 model TowerIp {
-  id            String   @id @default(uuid()) @db.Uuid
-  ip            String   @unique
-  office        String
-  location      String
-  responsible   String
-  antenna       Boolean  @default(false)
-  observations  String?
-  configuredAt  DateTime @default(now())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  deletedAt     DateTime?
+  id           String    @id @default(uuid()) @db.Uuid
+  ip           String    @unique
+  office       String
+  location     String
+  responsible  String
+  antenna      Boolean   @default(false)
+  observations String?
+  configuredAt DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
 
-  configuredById String @db.Uuid
-  createdById    String @db.Uuid
-  updatedById    String @db.Uuid
+  configuredById String  @db.Uuid
+  createdById    String  @db.Uuid
+  updatedById    String  @db.Uuid
   deletedById    String? @db.Uuid
-  configuredBy   User   @relation("TowerIpConfiguredBy", fields: [configuredById], references: [id])
-  createdBy      User   @relation("TowerIpCreatedBy", fields: [createdById], references: [id])
-  updatedBy      User   @relation("TowerIpUpdatedBy", fields: [updatedById], references: [id])
-  deletedBy      User?  @relation("TowerIpDeletedBy", fields: [deletedById], references: [id])
+  configuredBy   User    @relation("TowerIpConfiguredBy", fields: [configuredById], references: [id])
+  createdBy      User    @relation("TowerIpCreatedBy", fields: [createdById], references: [id])
+  updatedBy      User    @relation("TowerIpUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy      User?   @relation("TowerIpDeletedBy", fields: [deletedById], references: [id])
 
   @@index([office])
   @@index([deletedAt])
@@ -135,14 +136,14 @@ model TowerIp {
 }
 
 model HaqIp {
-  id           String   @id @default(uuid()) @db.Uuid
-  ip           String   @unique
+  id           String    @id @default(uuid()) @db.Uuid
+  ip           String    @unique
   area         String
   responsible  String
   username     String
   observations String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
   createdById String  @db.Uuid
@@ -158,12 +159,12 @@ model HaqIp {
 }
 
 model Extension {
-  id          String   @id @default(uuid()) @db.Uuid
-  extension   String   @unique
+  id          String    @id @default(uuid()) @db.Uuid
+  extension   String    @unique
   description String
   area        String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
   createdById String  @db.Uuid
@@ -202,6 +203,7 @@ model Printer {
   area             String
   model            String
   serialNumber     String        @unique
+  ip               String?       @unique
   status           PrinterStatus @default(ACTIVA)
   responsible      String
   installationDate DateTime
@@ -209,13 +211,13 @@ model Printer {
   updatedAt        DateTime      @updatedAt
   deletedAt        DateTime?
 
-  createdById String  @db.Uuid
-  updatedById String  @db.Uuid
-  deletedById String? @db.Uuid
-  createdBy   User    @relation("PrinterCreatedBy", fields: [createdById], references: [id])
-  updatedBy   User    @relation("PrinterUpdatedBy", fields: [updatedById], references: [id])
-  deletedBy   User?   @relation("PrinterDeletedBy", fields: [deletedById], references: [id])
-  toners      Toner[]
+  createdById    String          @db.Uuid
+  updatedById    String          @db.Uuid
+  deletedById    String?         @db.Uuid
+  createdBy      User            @relation("PrinterCreatedBy", fields: [createdById], references: [id])
+  updatedBy      User            @relation("PrinterUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy      User?           @relation("PrinterDeletedBy", fields: [deletedById], references: [id])
+  tonerMovements TonerMovement[]
 
   @@index([area])
   @@index([status])
@@ -224,41 +226,60 @@ model Printer {
 }
 
 model Toner {
-  id        String   @id @default(uuid()) @db.Uuid
+  id        String    @id @default(uuid()) @db.Uuid
   model     String
   color     String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  quantity  Int       @default(1)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  printerId String  @db.Uuid
-  printer   Printer @relation(fields: [printerId], references: [id], onDelete: Restrict)
-  createdById String  @db.Uuid
-  updatedById String  @db.Uuid
-  deletedById String? @db.Uuid
-  createdBy   User    @relation("TonerCreatedBy", fields: [createdById], references: [id])
-  updatedBy   User    @relation("TonerUpdatedBy", fields: [updatedById], references: [id])
-  deletedBy   User?   @relation("TonerDeletedBy", fields: [deletedById], references: [id])
+  printerName String
+  createdById String          @db.Uuid
+  updatedById String          @db.Uuid
+  deletedById String?         @db.Uuid
+  createdBy   User            @relation("TonerCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User            @relation("TonerUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy   User?           @relation("TonerDeletedBy", fields: [deletedById], references: [id])
+  movements   TonerMovement[]
 
-  @@index([printerId])
   @@index([deletedAt])
   @@map("toners")
 }
 
+model TonerMovement {
+  id          String   @id @default(uuid()) @db.Uuid
+  quantity    Int
+  tonerModel  String
+  printerName String
+  userName    String
+  createdAt   DateTime @default(now())
+
+  tonerId   String  @db.Uuid
+  printerId String  @db.Uuid
+  userId    String  @db.Uuid
+  toner     Toner   @relation(fields: [tonerId], references: [id], onDelete: Restrict)
+  printer   Printer @relation(fields: [printerId], references: [id], onDelete: Restrict)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([tonerId, createdAt])
+  @@map("toner_movements")
+}
+
 model ComputerEquipment {
-  id               String   @id @default(uuid()) @db.Uuid
-  serialNumber     String   @unique
-  ip               String   @unique
-  model            String
-  ciId             String   @unique
-  assetType        String
-  description      String
-  equipmentDate    DateTime
-  location         String
-  responsible      String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  deletedAt        DateTime?
+  id            String    @id @default(uuid()) @db.Uuid
+  serialNumber  String    @unique
+  ip            String    @unique
+  model         String
+  ciId          String    @unique
+  assetType     String
+  description   String
+  equipmentDate DateTime
+  location      String
+  responsible   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
 
   createdById String  @db.Uuid
   updatedById String  @db.Uuid

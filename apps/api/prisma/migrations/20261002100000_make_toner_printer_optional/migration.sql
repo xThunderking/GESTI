@@ -1,0 +1,1 @@
+ALTER TABLE "toners" ALTER COLUMN "printerId" DROP NOT NULL;

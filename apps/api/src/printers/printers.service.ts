@@ -24,11 +24,14 @@ export class PrintersService {
   async create(dto: CreatePrinterDto, userId: string) {
     const serialNumber = dto.serialNumber.trim();
     await this.assertSerialAvailable(serialNumber);
+    const ip = dto.ip.trim();
+    await this.assertIpAvailable(ip);
     return this.prisma.printer.create({
       data: {
         area: dto.area.trim(),
         model: dto.model.trim(),
         serialNumber,
+        ip,
         status: dto.status,
         responsible: dto.responsible.trim(),
         installationDate: new Date(dto.installationDate),
@@ -43,13 +46,16 @@ export class PrintersService {
     const existing = await this.prisma.printer.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new NotFoundException('Impresora no encontrada.');
     const serialNumber = dto.serialNumber?.trim();
+    const ip = dto.ip?.trim();
     if (serialNumber) await this.assertSerialAvailable(serialNumber, id);
+    if (ip) await this.assertIpAvailable(ip, id);
     return this.prisma.printer.update({
       where: { id },
       data: {
         area: dto.area?.trim(),
         model: dto.model?.trim(),
         serialNumber,
+        ip,
         status: dto.status,
         responsible: dto.responsible?.trim(),
         installationDate: dto.installationDate ? new Date(dto.installationDate) : undefined,
@@ -74,5 +80,13 @@ export class PrintersService {
       select: { id: true },
     });
     if (duplicate) throw new ConflictException('Ya existe una impresora con ese numero de serie.');
+  }
+
+  private async assertIpAvailable(ip: string, excludedId?: string) {
+    const duplicate = await this.prisma.printer.findFirst({
+      where: { ip, id: excludedId ? { not: excludedId } : undefined },
+      select: { id: true },
+    });
+    if (duplicate) throw new ConflictException('Ya existe una impresora con esa direccion IP.');
   }
 }
