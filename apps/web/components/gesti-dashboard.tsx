@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
   Bar,
   BarChart,
@@ -304,13 +304,26 @@ type ApiTowerIp = {
   id: string;
   ip: string;
   office: string;
-  location: string;
-  responsible: string;
+  location: string | null;
+  responsible: string | null;
   antenna: boolean;
   observations: string | null;
-  configuredBy: { name: string };
+  configuredAt: string | null;
+  configuredBy: { name: string; email: string } | null;
   createdBy: { name: string };
   updatedBy: { name: string };
+  assignments: ApiTowerIpAssignment[];
+};
+
+type ApiTowerIpAssignment = {
+  id: string;
+  assignmentType: 'ASIGNACION' | 'REASIGNACION';
+  responsible: string;
+  location: string;
+  antenna: boolean;
+  observations: string | null;
+  createdAt: string;
+  assignedBy: { name: string; email: string };
 };
 
 type ApiHaqIp = {
@@ -370,9 +383,15 @@ type EmailRequestFormState = Omit<
   'id' | 'requestDate' | 'lastGeneratedAt' | 'createdBy' | 'updatedBy'
 >;
 
-type TowerIpFormState = {
-  ip: string;
+type TowerIpRegistrationFormState = {
+  mode: 'individual' | 'range';
+  ips: string[];
+  rangeStart: string;
+  rangeEnd: string;
   office: string;
+};
+
+type TowerIpAssignmentFormState = {
   location: string;
   responsible: string;
   antenna: boolean;
@@ -475,9 +494,15 @@ const emptyAreaForm: AreaFormState = {
   description: '',
 };
 
-const emptyTowerIpForm: TowerIpFormState = {
-  ip: '',
+const emptyTowerIpRegistrationForm: TowerIpRegistrationFormState = {
+  mode: 'individual',
+  ips: [''],
+  rangeStart: '',
+  rangeEnd: '',
   office: '',
+};
+
+const emptyTowerIpAssignmentForm: TowerIpAssignmentFormState = {
   location: '',
   responsible: '',
   antenna: false,
@@ -1991,97 +2016,219 @@ function TowerIpsView({ request }: { request: AuthenticatedRequest }) {
   const queryClient = useQueryClient();
   const workspace = useModuleWorkspace();
   const [searchTerm, setSearchTerm] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<TowerIpFormState>(emptyTowerIpForm);
+  const [officeFilter, setOfficeFilter] = useState('all');
+  const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
+  const [registerForm, setRegisterForm] = useState<TowerIpRegistrationFormState>(emptyTowerIpRegistrationForm);
+  const [assignmentForm, setAssignmentForm] = useState<TowerIpAssignmentFormState>(emptyTowerIpAssignmentForm);
+  const [activeIp, setActiveIp] = useState<ApiTowerIp | null>(null);
+  const [assignmentAction, setAssignmentAction] = useState<'assign' | 'reassign' | null>(null);
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
+  const [assignmentError, setAssignmentError] = useState('');
+  const ipInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const ipsQuery = useQuery({
     queryKey: ['tower-ips'],
     queryFn: () => request<ApiTowerIp[]>('/tower-ips'),
   });
-  const saveMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string | null; body: TowerIpFormState }) =>
-      request<ApiTowerIp>(id ? `/tower-ips/${id}` : '/tower-ips', {
-        method: id ? 'PATCH' : 'POST',
-        body: JSON.stringify({
-          ...body,
-          ip: body.ip.trim(),
-          office: body.office.trim(),
-          location: body.location.trim(),
-          responsible: body.responsible.trim(),
-          observations: body.observations.trim() || undefined,
-        }),
-      }),
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['tower-ips'] }),
+  const createMutation = useMutation({
+    mutationFn: (body: { office: string; ips: string[] }) =>
+      request<ApiTowerIp[]>('/tower-ips/bulk', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: async (created) => {
+      await queryClient.invalidateQueries({ queryKey: ['tower-ips'] });
+      setRegisterForm(emptyTowerIpRegistrationForm);
+      setFormError('');
+      setFormSuccess(`${created.length} IP registradas para ${created[0]?.office ?? 'el consultorio'}.`);
+      workspace.showList();
+    },
   });
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => request<void>(`/tower-ips/${id}`, { method: 'DELETE' }),
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['tower-ips'] }),
+  const assignmentMutation = useMutation({
+    mutationFn: ({ id, action, body }: { id: string; action: 'assign' | 'reassign'; body: TowerIpAssignmentFormState }) =>
+      request<ApiTowerIp>(`/tower-ips/${id}/${action}`, { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ['tower-ips'] });
+      setAssignmentAction(null);
+      setActiveIp(null);
+      setAssignmentError('');
+      setFormSuccess(variables.action === 'assign' ? 'IP asignada correctamente.' : 'IP reasignada correctamente.');
+    },
   });
   const ips = ipsQuery.data ?? [];
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase('es');
-  const filteredIps = ips.filter((item) =>
-    [item.ip, item.office, item.location, item.responsible].some((value) =>
+  const officeOptions = [...new Set(ips.map((item) => item.office))].sort((first, second) => first.localeCompare(second, 'es', { numeric: true }));
+  const filteredIps = ips.filter((item) => {
+    const matchesSearch = [item.ip, item.office, item.location ?? '', item.responsible ?? ''].some((value) =>
       value.toLocaleLowerCase('es').includes(normalizedSearch),
-    ),
-  );
+    );
+    const matchesOffice = officeFilter === 'all' || item.office === officeFilter;
+    const isAssigned = Boolean(item.configuredAt);
+    const matchesAssignment = assignmentFilter === 'all' || (assignmentFilter === 'assigned' ? isAssigned : !isAssigned);
+    return matchesSearch && matchesOffice && matchesAssignment;
+  });
+  function isValidIpv4(value: string) {
+    const octets = value.split('.');
+    return octets.length === 4 && octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255);
+  }
 
-  function resetForm() {
-    setEditingId(null);
-    setForm(emptyTowerIpForm);
-    setFormError('');
-    setFormSuccess('');
-    workspace.showList();
+  function ipv4ToNumber(value: string) {
+    return value.split('.').reduce((total, octet) => total * 256 + Number(octet), 0);
+  }
+
+  function numberToIpv4(value: number) {
+    const octets = [0, 0, 0, 0];
+    let remainder = value;
+    for (let index = 3; index >= 0; index -= 1) {
+      octets[index] = remainder % 256;
+      remainder = Math.floor(remainder / 256);
+    }
+    return octets.join('.');
+  }
+
+  function expandIpv4Range(start: string, end: string) {
+    if (!isValidIpv4(start) || !isValidIpv4(end)) return [];
+    const first = ipv4ToNumber(start);
+    const last = ipv4ToNumber(end);
+    if (last < first || last - first + 1 > 1024) return [];
+    return Array.from({ length: last - first + 1 }, (_, index) => numberToIpv4(first + index));
+  }
+
+  const parsedIps = registerForm.mode === 'range'
+    ? expandIpv4Range(registerForm.rangeStart.trim(), registerForm.rangeEnd.trim())
+    : registerForm.ips.map((ip) => ip.trim()).filter(Boolean);
+  const rangeStart = registerForm.rangeStart.trim();
+  const rangeEnd = registerForm.rangeEnd.trim();
+  const rangeStartValid = isValidIpv4(rangeStart);
+  const rangeEndValid = isValidIpv4(rangeEnd);
+  const rangeReversed = rangeStartValid && rangeEndValid && ipv4ToNumber(rangeEnd) < ipv4ToNumber(rangeStart);
+  const rangeTooLarge = rangeStartValid && rangeEndValid && ipv4ToNumber(rangeEnd) - ipv4ToNumber(rangeStart) + 1 > 1024;
+  const rangeReady = registerForm.mode === 'range' && rangeStartValid && rangeEndValid && !rangeReversed && !rangeTooLarge;
+
+  function normalizeIpv4Input(value: string) {
+    return value
+      .replace(/[^\d.]/g, '')
+      .split('.')
+      .slice(0, 4)
+      .map((octet) => octet.slice(0, 3))
+      .join('.')
+      .slice(0, 15);
   }
 
   function startNew() {
-    resetForm();
-    workspace.showForm();
-  }
-
-  function editIp(item: ApiTowerIp) {
-    setEditingId(item.id);
-    setForm({
-      ip: item.ip,
-      office: item.office,
-      location: item.location,
-      responsible: item.responsible,
-      antenna: item.antenna,
-      observations: item.observations ?? '',
-    });
+    setRegisterForm(emptyTowerIpRegistrationForm);
     setFormError('');
     setFormSuccess('');
     workspace.showForm();
   }
 
-  async function removeIp(item: ApiTowerIp) {
-    if (!window.confirm(`Dar de baja la IP ${item.ip}?`)) return;
+  function updateRegistrationIp(index: number, value: string) {
+    setRegisterForm((current) => ({
+      ...current,
+      ips: current.ips.map((ip, row) => row === index ? value : ip),
+    }));
+  }
+
+  function addRegistrationIp() {
+    setRegisterForm((current) => ({ ...current, ips: [...current.ips, ''] }));
+  }
+
+  function handleRegistrationIpKeyDown(event: KeyboardEvent<HTMLInputElement>, index: number) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const currentIp = registerForm.ips[index]?.trim() ?? '';
+    if (!isValidIpv4(currentIp)) {
+      setFormError('Completa la IP con cuatro grupos numericos entre 0 y 255 antes de continuar.');
+      return;
+    }
+    setFormError('');
+    const nextIndex = registerForm.ips.length;
+    addRegistrationIp();
+    requestAnimationFrame(() => ipInputRefs.current[nextIndex]?.focus());
+  }
+
+  function removeRegistrationIp(index: number) {
+    setRegisterForm((current) => ({
+      ...current,
+      ips: current.ips.length === 1 ? [''] : current.ips.filter((_, row) => row !== index),
+    }));
+  }
+
+  function openAssignment(item: ApiTowerIp, action: 'assign' | 'reassign') {
+    setActiveIp(item);
+    setAssignmentAction(action);
+    setAssignmentError('');
+    setAssignmentForm(action === 'reassign' ? {
+      location: item.location ?? '',
+      responsible: item.responsible ?? '',
+      antenna: item.antenna,
+      observations: item.observations ?? '',
+    } : emptyTowerIpAssignmentForm);
+  }
+
+  function closeAssignment() {
+    setAssignmentAction(null);
+    setActiveIp(null);
+    setAssignmentError('');
+  }
+
+  async function submitRegistration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const office = registerForm.office.trim();
+    if (!office) {
+      setFormError('Escribe el numero de consultorio.');
+      return;
+    }
+    if (registerForm.mode === 'range') {
+      if (!isValidIpv4(registerForm.rangeStart.trim()) || !isValidIpv4(registerForm.rangeEnd.trim())) {
+        setFormError('Escribe una IP inicial y una IP final con formato IPv4.');
+        return;
+      }
+      const first = ipv4ToNumber(registerForm.rangeStart.trim());
+      const last = ipv4ToNumber(registerForm.rangeEnd.trim());
+      if (last < first) {
+        setFormError('La IP final debe ser igual o mayor que la IP inicial.');
+        return;
+      }
+      if (last - first + 1 > 1024) {
+        setFormError('El rango puede contener hasta 1,024 direcciones IP.');
+        return;
+      }
+    } else if (parsedIps.length === 0) {
+      setFormError('Escribe al menos una direccion IP.');
+      return;
+    }
+    const invalidIp = parsedIps.find((ip) => !isValidIpv4(ip));
+    if (invalidIp) {
+      setFormError(`La IP ${invalidIp} debe tener cuatro grupos numericos entre 0 y 255.`);
+      return;
+    }
+    if (new Set(parsedIps).size !== parsedIps.length) {
+      setFormError('La lista contiene direcciones IP repetidas.');
+      return;
+    }
+    setFormError('');
     try {
-      await deleteMutation.mutateAsync(item.id);
-      if (editingId === item.id) resetForm();
+      await createMutation.mutateAsync({ office, ips: parsedIps });
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'No fue posible dar de baja la IP.');
+      setFormError(error instanceof Error ? error.message : 'No fue posible registrar las IP.');
     }
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submitAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (
-      !form.ip.trim() ||
-      !form.office.trim() ||
-      !form.location.trim() ||
-      !form.responsible.trim()
-    ) {
-      setFormError('IP, consultorio, ubicación y responsable son obligatorios.');
+    if (!activeIp || !assignmentAction) return;
+    const body = {
+      ...assignmentForm,
+      responsible: assignmentForm.responsible.trim(),
+      location: assignmentForm.location.trim(),
+      observations: assignmentForm.observations.trim(),
+    };
+    if (!body.responsible || !body.location) {
+      setAssignmentError('Responsable y ubicacion son obligatorios.');
       return;
     }
     try {
-      const wasEditing = Boolean(editingId);
-      await saveMutation.mutateAsync({ id: editingId, body: form });
-      resetForm();
-      setFormSuccess(wasEditing ? 'IP actualizada.' : 'IP registrada.');
+      await assignmentMutation.mutateAsync({ id: activeIp.id, action: assignmentAction, body });
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'No fue posible guardar la IP.');
+      setAssignmentError(error instanceof Error ? error.message : 'No fue posible guardar la asignacion.');
     }
   }
 
@@ -2089,284 +2236,243 @@ function TowerIpsView({ request }: { request: AuthenticatedRequest }) {
     <>
       <header className="flex flex-col gap-4 border-b pb-5 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal text-foreground">
-            IPs Torre Médica
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Registro de direccionamiento, consultorios, ubicación y antenas.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-normal text-foreground">IPs Torre Medica</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Registra varias direcciones para un consultorio y asignalas despues a un responsable.</p>
         </div>
-        <Button onClick={startNew} variant="outline">
-          <Plus />
-          Nueva IP
-        </Button>
       </header>
-      {ipsQuery.isLoading ? (
-        <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">
-          Cargando IPs...
-        </p>
-      ) : null}
-      {ipsQuery.error ? (
-        <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">
-          {ipsQuery.error.message}
-        </p>
-      ) : null}
-      {formError && workspace.pane === 'list' ? (
-        <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {formError}
-        </p>
-      ) : null}
-      {formSuccess ? (
-        <p
-          role="status"
-          className="mt-5 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800"
-        >
-          {formSuccess}
-        </p>
-      ) : null}
+      {ipsQuery.isLoading ? <p className="mt-6 rounded-md border bg-card p-4 text-sm text-muted-foreground">Cargando IPs...</p> : null}
+      {ipsQuery.error ? <p className="mt-6 rounded-md bg-destructive/10 p-4 text-sm text-destructive">{ipsQuery.error.message}</p> : null}
+      {formError && workspace.pane === 'list' ? <p role="alert" className="mt-5 rounded-md bg-destructive/10 p-3 text-sm text-destructive">{formError}</p> : null}
+      {formSuccess ? <p role="status" className="mt-5 rounded-md border border-teal-200 bg-teal-50 p-3 text-sm text-teal-800">{formSuccess}</p> : null}
       <div id={workspace.anchorId} className="scroll-mt-20">
-        <ModuleWorkspaceTabs
-          pane={workspace.pane}
-          onShowList={workspace.showList}
-          onShowForm={workspace.showForm}
-          formLabel="Nuevo"
-        />
+        <ModuleWorkspaceTabs pane={workspace.pane} onShowList={workspace.showList} onShowForm={startNew} formLabel="Nuevo" />
       </div>
-      <section
-        className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]"
-        data-mobile-pane={workspace.pane}
-      >
-        <form
-          data-pane="form"
-          className="min-w-0 rounded-md border bg-card p-4 shadow-sm"
-          onSubmit={submit}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold">{editingId ? 'Editar IP' : 'Nueva IP'}</h2>
-              <p className="text-sm text-muted-foreground">
-                El usuario actual se guarda automáticamente como configuró.
-              </p>
-            </div>
-            {editingId ? (
-              <Button
-                aria-label="Cancelar edición"
-                onClick={resetForm}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <X />
-              </Button>
-            ) : null}
+      <section className="mt-4 grid min-w-0 gap-4 xl:mt-6 xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]" data-mobile-pane={workspace.pane}>
+        <form data-pane="form" className="min-w-0 rounded-2xl border border-sky-100 bg-white p-4 shadow-lg shadow-slate-900/5 sm:p-5" onSubmit={submitRegistration}>
+          <div className="border-b border-slate-100 pb-4">
+            <h2 className="text-lg font-bold text-slate-900">Registrar direcciones IP</h2>
+            <p className="mt-1 text-sm text-slate-600">Puedes agregar varias IP para el mismo consultorio.</p>
           </div>
           <div className="mt-4 grid gap-4">
-            <label className="grid gap-2 text-sm font-medium">
-              IP
-              <input
-                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) => setForm((current) => ({ ...current, ip: event.target.value }))}
-                placeholder="192.168.10.25"
-                value={form.ip}
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
+            <div className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+              <Button className="min-w-0 rounded-lg" onClick={() => { setRegisterForm((current) => ({ ...current, mode: 'individual' })); setFormError(''); }} type="button" variant={registerForm.mode === 'individual' ? 'default' : 'ghost'}>IPs individuales</Button>
+              <Button className="min-w-0 rounded-lg" onClick={() => { setRegisterForm((current) => ({ ...current, mode: 'range' })); setFormError(''); }} type="button" variant={registerForm.mode === 'range' ? 'default' : 'ghost'}>Rango de IPs</Button>
+            </div>
+            {registerForm.mode === 'individual' ? <div className="grid gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-slate-800">Direcciones IP</span>
+                {parsedIps.length ? <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800">{parsedIps.length} {parsedIps.length === 1 ? 'IP lista' : 'IPs listas'}</span> : null}
+              </div>
+              <div className="grid gap-2">
+                {registerForm.ips.map((ip, index) => (
+                  <div className="flex min-w-0 items-center gap-2" key={index}>
+                    <label className="grid min-w-0 flex-1 gap-1.5 text-xs font-semibold text-slate-600">
+                      IP {index + 1}
+                      <input
+                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 font-mono text-sm font-normal text-slate-900 outline-none transition placeholder:font-sans placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                        maxLength={15}
+                        inputMode="decimal"
+                        onChange={(event) => updateRegistrationIp(index, normalizeIpv4Input(event.target.value))}
+                        onKeyDown={(event) => handleRegistrationIpKeyDown(event, index)}
+                        placeholder="192.168.10.25"
+                        ref={(element) => { ipInputRefs.current[index] = element; }}
+                        required={index === 0}
+                        type="text"
+                        value={ip}
+                      />
+                    </label>
+                    <Button
+                      aria-label={`Quitar IP ${index + 1}`}
+                      className="mt-5 size-10 shrink-0 rounded-xl border border-rose-200 bg-rose-50 p-0 text-rose-700 hover:bg-rose-100"
+                      disabled={registerForm.ips.length === 1}
+                      onClick={() => removeRegistrationIp(index)}
+                      size="icon"
+                      type="button"
+                      variant="outline"
+                    >
+                      <Minus />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <Button
+                className="min-h-10 w-full justify-center rounded-xl border-dashed border-teal-300 bg-teal-50/70 font-semibold text-teal-800 hover:border-teal-400 hover:bg-teal-100 sm:w-fit"
+                onClick={addRegistrationIp}
+                type="button"
+                variant="outline"
+              >
+                <Plus /> Agregar otra IP
+              </Button>
+            </div> : <div className="overflow-hidden rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-teal-50 shadow-sm">
+              <div className="flex items-center gap-3 border-b border-sky-100 bg-white/70 px-4 py-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-sky-100 to-teal-100 text-teal-800"><Network className="size-5" /></span>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-slate-900">Generar rango de IPs</h3>
+                  <p className="text-xs text-slate-600">Desde la primera dirección hasta la última</p>
+                </div>
+              </div>
+              <div className="grid gap-4 p-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end">
+                  <label className="grid min-w-0 gap-1.5 text-xs font-semibold text-slate-700">
+                    <span className="flex items-center gap-2"><span className="grid size-5 place-items-center rounded-full bg-sky-100 text-[10px] font-bold text-sky-800">1</span>Desde</span>
+                    <input aria-label="IP inicial del rango" className="h-12 w-full min-w-0 rounded-xl border border-sky-200 bg-white px-3 font-mono text-sm font-medium text-slate-900 shadow-sm outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100" inputMode="decimal" maxLength={15} onChange={(event) => setRegisterForm((current) => ({ ...current, rangeStart: normalizeIpv4Input(event.target.value) }))} placeholder="192.168.13.1" type="text" value={registerForm.rangeStart} />
+                    {rangeStart && !rangeStartValid ? <span className="text-[11px] font-medium text-rose-600">Completa una IPv4 válida</span> : null}
+                  </label>
+                  <ArrowRight className="hidden mb-3 size-5 text-sky-500 sm:block" />
+                  <label className="grid min-w-0 gap-1.5 text-xs font-semibold text-slate-700">
+                    <span className="flex items-center gap-2"><span className="grid size-5 place-items-center rounded-full bg-teal-100 text-[10px] font-bold text-teal-800">2</span>Hasta</span>
+                    <input aria-label="IP final del rango" className="h-12 w-full min-w-0 rounded-xl border border-teal-200 bg-white px-3 font-mono text-sm font-medium text-slate-900 shadow-sm outline-none transition placeholder:font-normal placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100" inputMode="decimal" maxLength={15} onChange={(event) => setRegisterForm((current) => ({ ...current, rangeEnd: normalizeIpv4Input(event.target.value) }))} placeholder="192.168.13.250" type="text" value={registerForm.rangeEnd} />
+                    {rangeEnd && !rangeEndValid ? <span className="text-[11px] font-medium text-rose-600">Completa una IPv4 válida</span> : null}
+                  </label>
+                </div>
+                {rangeReady ? (
+                  <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-emerald-900">
+                    <CheckCircle2 className="size-5 shrink-0 text-emerald-600" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold">{parsedIps.length} {parsedIps.length === 1 ? 'IP lista' : 'IPs listas'} para registrar</p>
+                      <p className="truncate font-mono text-xs text-emerald-800">{rangeStart} → {rangeEnd}</p>
+                    </div>
+                  </div>
+                ) : rangeReversed || rangeTooLarge ? (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-900">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                    {rangeReversed ? 'La dirección final debe ser igual o posterior a la inicial.' : 'El rango máximo permitido es de 1,024 direcciones.'}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-xs text-slate-600">
+                    Se incluirán ambos extremos. Máximo: <strong>1,024 IPs</strong> por registro.
+                  </div>
+                )}
+              </div>
+            </div>}
+            <label className="grid gap-2 text-sm font-semibold text-slate-800">
               Consultorio
-              <input
-                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, office: event.target.value }))
-                }
-                value={form.office}
-              />
+              <input className="h-11 rounded-xl border border-slate-300 px-3 text-sm font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" inputMode="numeric" maxLength={120} onChange={(event) => setRegisterForm((current) => ({ ...current, office: event.target.value.replace(/\D/g, '') }))} pattern="[0-9]+" placeholder="203" required type="text" value={registerForm.office} />
             </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Ubicación
-              <input
-                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, location: event.target.value }))
-                }
-                value={form.location}
-              />
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Responsable
-              <input
-                className="h-10 rounded-md border bg-background px-3 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, responsible: event.target.value }))
-                }
-                value={form.responsible}
-              />
-            </label>
-            <label className="flex items-center gap-3 rounded-md border bg-background p-3 text-sm font-medium">
-              <input
-                checked={form.antenna}
-                className="size-4 accent-[#00afaa]"
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, antenna: event.target.checked }))
-                }
-                type="checkbox"
-              />
-              Cuenta con antena
-            </label>
-            <label className="grid gap-2 text-sm font-medium">
-              Observaciones
-              <span className="text-xs font-normal text-muted-foreground">
-                Se almacenan en la base de datos y no se muestran en la tabla.
-              </span>
-              <textarea
-                className="min-h-24 rounded-md border bg-background px-3 py-2 text-sm font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, observations: event.target.value }))
-                }
-                value={form.observations}
-              />
-            </label>
-            {formError ? (
-              <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                {formError}
-              </p>
-            ) : null}
-            <Button disabled={saveMutation.isPending} type="submit">
-              {saveMutation.isPending ? (
-                'Guardando...'
-              ) : editingId ? (
-                <>
-                  <Edit3 />
-                  Guardar cambios
-                </>
-              ) : (
-                <>
-                  <Plus />
-                  Registrar IP
-                </>
-              )}
-            </Button>
+            {formError ? <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{formError}</p> : null}
+            <Button className="min-h-11 rounded-xl bg-gradient-to-r from-teal-700 to-sky-800 font-semibold shadow-md hover:from-teal-800 hover:to-sky-900" disabled={createMutation.isPending} type="submit">{createMutation.isPending ? 'Registrando...' : <><Plus /> Registrar {parsedIps.length || ''} IP{parsedIps.length === 1 ? '' : 's'}</>}</Button>
           </div>
         </form>
-        <section
-          data-pane="list"
-          className="min-w-0 overflow-hidden rounded-md border bg-card shadow-sm"
-        >
-          <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-base font-semibold">Directorio de IPs</h2>
-              <p className="text-sm text-muted-foreground">
-                Observaciones y auditoría se conservan en la base de datos.
-              </p>
+        <section data-pane="list" className="min-w-0 overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-lg shadow-slate-900/5">
+          <div className="grid gap-3 border-b bg-gradient-to-r from-sky-50 via-white to-teal-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Directorio de IPs</h2>
+                <p className="mt-1 text-sm text-slate-600">Asigna o reasigna cada direccion desde su registro.</p>
+              </div>
+              <label className="flex h-10 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm sm:max-w-80">
+                <Search className="size-4 shrink-0 text-muted-foreground" />
+                <span className="sr-only">Buscar IPs</span>
+                <input className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" onChange={(event) => setSearchTerm(event.target.value)} placeholder="Buscar IP, consultorio o responsable" type="search" value={searchTerm} />
+              </label>
             </div>
-            <label className="flex h-9 w-full items-center gap-2 rounded-md border bg-background px-3 sm:max-w-80">
-              <Search className="size-4 shrink-0 text-muted-foreground" />
-              <span className="sr-only">Buscar IPs</span>
-              <input
-                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Buscar IP, consultorio o responsable"
-                type="search"
-                value={searchTerm}
-              />
-            </label>
+            <div className="grid gap-2 sm:grid-cols-2 xl:max-w-2xl xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+              <label className="grid gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Consultorio
+                <select aria-label="Filtrar por consultorio" className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-700 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100" onChange={(event) => setOfficeFilter(event.target.value)} value={officeFilter}>
+                  <option value="all">Todos los consultorios</option>
+                  {officeOptions.map((office) => <option key={office} value={office}>Consultorio {office}</option>)}
+                </select>
+              </label>
+              <label className="grid gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Estado de la IP
+                <select aria-label="Filtrar por estado de asignación" className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium normal-case tracking-normal text-slate-700 shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100" onChange={(event) => setAssignmentFilter(event.target.value as typeof assignmentFilter)} value={assignmentFilter}>
+                  <option value="all">Todas las IPs</option>
+                  <option value="assigned">Asignadas</option>
+                  <option value="unassigned">Sin asignar</option>
+                </select>
+              </label>
+            </div>
           </div>
           <RecordCards
             items={filteredIps}
             getKey={(item) => item.id}
-            title={(item) => item.ip}
-            subtitle={(item) => item.office}
+            compact
+            title={(item) => <span className="flex min-w-0 items-center gap-2"><span className="whitespace-nowrap font-mono text-sm font-extrabold tracking-wide text-[#0b2347]">{item.ip}</span><span className={item.configuredAt ? 'shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800' : 'shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-700'}>{item.configuredAt ? 'Asignada' : 'Disponible'}</span></span>}
+            subtitle={(item) => <>Consultorio {item.office}</>}
             fields={[
-              { label: 'Ubicación', render: (item) => item.location },
-              { label: 'Responsable', render: (item) => item.responsible },
-              { label: 'Antena', render: (item) => (item.antenna ? 'Sí' : 'No') },
+              { label: 'Responsable', render: (item) => <span className={item.responsible ? 'font-semibold text-slate-800' : 'font-medium text-amber-700'}>{item.responsible ?? 'Pendiente de asignación'}</span> },
+              { label: 'Modem / antena', render: (item) => item.configuredAt ? item.antenna ? <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700"><CheckCircle2 className="size-4" /> Sí</span> : <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2 py-1 font-semibold text-rose-700"><X className="size-4" /> No</span> : <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-slate-500"><span className="size-1.5 rounded-full bg-slate-400" /> Sin asignar</span> },
             ]}
             actions={(item) => (
-              <>
-                <Button onClick={() => editIp(item)} type="button" variant="outline">
-                  <Edit3 /> Editar
-                </Button>
-                <Button
-                  disabled={deleteMutation.isPending}
-                  onClick={() => void removeIp(item)}
-                  type="button"
-                  variant="destructive"
-                >
-                  <Trash2 /> Eliminar
-                </Button>
-              </>
+              <div className="record-card-actions flex flex-wrap gap-1.5">
+                <Button aria-label={`Asignar ${item.ip}`} className="h-8 rounded-lg border border-teal-200 bg-gradient-to-b from-white to-teal-50 px-2 text-xs font-semibold text-teal-800 shadow-sm hover:border-teal-300 hover:from-teal-50 hover:to-teal-100" disabled={Boolean(item.configuredAt)} onClick={() => openAssignment(item, 'assign')} type="button" variant="outline"><UserPlus className="size-3.5" /> Asignar</Button>
+                <Button aria-label={`Reasignar ${item.ip}`} className="h-8 rounded-lg border border-violet-200 bg-gradient-to-b from-white to-violet-50 px-2 text-xs font-semibold text-violet-800 shadow-sm hover:border-violet-300 hover:from-violet-50 hover:to-violet-100" disabled={!item.configuredAt} onClick={() => openAssignment(item, 'reassign')} type="button" variant="outline"><UserCheck className="size-3.5" /> Reasignar</Button>
+              </div>
             )}
             emptyMessage="No se encontraron IPs."
+            listClassName="gap-3 p-3 sm:gap-4 sm:p-4"
+            cardClassName={(item) => item.configuredAt ? 'border-emerald-200 bg-emerald-50 shadow-sm shadow-emerald-950/5 hover:border-emerald-300' : 'border-slate-300 bg-slate-100 shadow-sm hover:border-slate-400'}
+            headerClassName={(item) => item.configuredAt ? 'border-emerald-200 bg-gradient-to-r from-emerald-100 via-emerald-50 to-teal-50' : 'border-slate-200 bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200'}
           />
           <div className="hidden overflow-x-auto xl:block">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead className="bg-secondary text-left text-xs uppercase text-muted-foreground">
+            <table className="w-full min-w-[840px] border-separate border-spacing-0 text-sm">
+              <thead className="bg-gradient-to-r from-sky-100 via-slate-50 to-teal-50 text-left text-[10px] uppercase tracking-[0.12em] text-slate-600">
                 <tr>
-                  <th className="px-4 py-3 font-semibold">IP</th>
-                  <th className="px-4 py-3 font-semibold">Consultorio</th>
-                  <th className="px-4 py-3 font-semibold">Ubicación</th>
-                  <th className="px-4 py-3 font-semibold">Responsable</th>
-                  <th className="px-4 py-3 font-semibold">Antena</th>
-                  <th className="px-4 py-3 text-right font-semibold">Acciones</th>
+                  <th className="whitespace-nowrap border-b border-sky-100 px-4 py-3 font-bold">Dirección IP</th>
+                  <th className="whitespace-nowrap border-b border-sky-100 px-4 py-3 font-bold">Consultorio</th>
+                  <th className="whitespace-nowrap border-b border-sky-100 px-4 py-3 font-bold">Responsable</th>
+                  <th className="whitespace-nowrap border-b border-sky-100 px-4 py-3 text-center font-bold">Modem/antena</th>
+                  <th className="whitespace-nowrap border-b border-sky-100 px-4 py-3 text-right font-bold">Acciones</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody>
                 {filteredIps.map((item) => (
-                  <tr
-                    className={editingId === item.id ? 'bg-secondary/70' : undefined}
-                    key={item.id}
-                  >
-                    <td className="px-4 py-3 font-mono font-medium">{item.ip}</td>
-                    <td className="px-4 py-3">{item.office}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{item.location}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{item.responsible}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={cn(
-                          'inline-flex rounded-md border px-2 py-1 text-xs font-semibold',
-                          item.antenna
-                            ? 'border-teal-200 bg-teal-50 text-teal-800'
-                            : 'bg-background text-muted-foreground',
-                        )}
-                      >
-                        {item.antenna ? 'Sí' : 'No'}
-                      </span>
+                  <tr className="group transition-colors hover:bg-sky-50/70" key={item.id}>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3"><div className="flex items-center gap-2.5"><span className="font-mono text-[13px] font-bold tracking-tight text-[#0b2347]">{item.ip}</span><span className={item.configuredAt ? 'rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-emerald-800' : 'rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-600'}>{item.configuredAt ? 'Asignada' : 'Disponible'}</span></div></td>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3"><span className="rounded-lg bg-sky-50 px-2.5 py-1.5 text-xs font-bold text-sky-900">{item.office}</span></td>
+                    <td className="max-w-48 truncate border-b border-slate-100 px-4 py-3 text-sm text-slate-700" title={item.responsible ?? 'Pendiente'}>{item.responsible ?? <span className="text-amber-700">Pendiente de asignación</span>}</td>
+                    <td className="border-b border-slate-100 px-4 py-3 text-center">
+                      {item.configuredAt ? item.antenna ? <span aria-label="Modem o antena: sí" className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700" title="Sí tiene modem o antena"><CheckCircle2 className="size-4" /> Sí</span> : <span aria-label="Modem o antena: no" className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700" title="No tiene modem o antena"><X className="size-4" /> No</span> : <span aria-label="Sin asignar" className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500"><span className="size-1.5 rounded-full bg-slate-400" /> Sin asignar</span>}
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          aria-label={`Editar ${item.ip}`}
-                          onClick={() => editIp(item)}
-                          size="icon"
-                          type="button"
-                          variant="outline"
-                        >
-                          <Edit3 />
-                        </Button>
-                        <Button
-                          aria-label={`Eliminar ${item.ip}`}
-                          disabled={deleteMutation.isPending}
-                          onClick={() => void removeIp(item)}
-                          size="icon"
-                          type="button"
-                          variant="destructive"
-                        >
-                          <Trash2 />
-                        </Button>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3">
+                      <div className="flex justify-end gap-1">
+                        <Button aria-label={`Asignar ${item.ip}`} className="size-8 rounded-lg border-teal-200 bg-white p-0 text-teal-800 shadow-sm transition hover:bg-teal-50" disabled={Boolean(item.configuredAt)} onClick={() => openAssignment(item, 'assign')} size="icon" title="Asignar" type="button" variant="outline"><UserPlus className="size-4" /></Button>
+                        <Button aria-label={`Reasignar ${item.ip}`} className="size-8 rounded-lg border-violet-200 bg-white p-0 text-violet-800 shadow-sm transition hover:bg-violet-50" disabled={!item.configuredAt} onClick={() => openAssignment(item, 'reassign')} size="icon" title="Reasignar" type="button" variant="outline"><UserCheck className="size-4" /></Button>
                       </div>
                     </td>
                   </tr>
                 ))}
-                {filteredIps.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-10 text-center text-muted-foreground" colSpan={6}>
-                      No se encontraron IPs.
-                    </td>
-                  </tr>
-                ) : null}
+                {filteredIps.length === 0 ? <tr><td className="px-4 py-10 text-center text-muted-foreground" colSpan={5}>No se encontraron IPs.</td></tr> : null}
               </tbody>
             </table>
           </div>
         </section>
       </section>
+      {assignmentAction && activeIp ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) closeAssignment(); }}>
+          <section aria-labelledby="tower-ip-assignment-title" aria-modal="true" className="min-w-0 max-w-xl overflow-x-hidden overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-5" role="dialog" style={{ width: 'min(calc(100vw - 32px), 36rem)', maxHeight: 'calc(100dvh - 32px)' }}>
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="min-w-0">
+                <p className="font-mono text-sm font-bold text-teal-700">{activeIp.ip} - {activeIp.office}</p>
+                <h2 className="mt-1 text-xl font-bold text-slate-900" id="tower-ip-assignment-title">{assignmentAction === 'assign' ? 'Asignar IP' : 'Reasignar IP'}</h2>
+                <p className="mt-1 text-sm text-slate-600">El sistema guardara el usuario y la fecha de este movimiento.</p>
+              </div>
+              <Button aria-label="Cerrar" onClick={closeAssignment} size="icon" type="button" variant="ghost"><X /></Button>
+            </div>
+            <form className="mt-5 grid min-w-0 gap-4" onSubmit={submitAssignment}>
+              <label className="grid gap-2 text-sm font-semibold text-slate-800">Responsable
+                <input autoFocus className="h-11 w-full min-w-0 rounded-xl border border-slate-300 px-3 text-sm font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" onChange={(event) => setAssignmentForm((current) => ({ ...current, responsible: event.target.value }))} required value={assignmentForm.responsible} />
+              </label>
+              <label className="grid gap-2 text-sm font-semibold text-slate-800">Ubicacion
+                <input className="h-11 w-full min-w-0 rounded-xl border border-slate-300 px-3 text-sm font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" onChange={(event) => setAssignmentForm((current) => ({ ...current, location: event.target.value }))} placeholder="Piso, area o punto de red" required value={assignmentForm.location} />
+              </label>
+              <label className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
+                <input checked={assignmentForm.antenna} className="size-4 accent-[#00afaa]" onChange={(event) => setAssignmentForm((current) => ({ ...current, antenna: event.target.checked }))} type="checkbox" />
+                Modem / antena
+              </label>
+              <label className="grid gap-2 text-sm font-semibold text-slate-800">Observaciones
+                <textarea className="min-h-24 w-full min-w-0 rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" onChange={(event) => setAssignmentForm((current) => ({ ...current, observations: event.target.value }))} value={assignmentForm.observations} />
+              </label>
+              {assignmentError ? <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700" role="alert">{assignmentError}</p> : null}
+              <div className="mt-1 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button className="w-full rounded-xl sm:w-auto" onClick={closeAssignment} type="button" variant="outline">Cancelar</Button>
+                <Button className="w-full rounded-xl bg-gradient-to-r from-teal-700 to-sky-800 font-semibold shadow-md hover:from-teal-800 hover:to-sky-900 sm:w-auto" disabled={assignmentMutation.isPending} type="submit">{assignmentMutation.isPending ? 'Guardando...' : assignmentAction === 'assign' ? <><UserPlus /> Asignar IP</> : <><UserCheck /> Guardar reasignacion</>}</Button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -4034,8 +4140,8 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
         </section>
       ) : null}
       {stockAction && activeToner ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) closeStockDialog(); }}>
-          <section aria-labelledby="toner-action-title" aria-modal="true" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl" role="dialog">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) closeStockDialog(); }}>
+          <section aria-labelledby="toner-action-title" aria-modal="true" className="min-w-0 max-w-xl overflow-x-hidden overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-5" role="dialog" style={{ width: 'min(calc(100vw - 32px), 36rem)', maxHeight: 'calc(100dvh - 32px)' }}>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-teal-700">{activeToner.model}</p>
@@ -4043,7 +4149,7 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
               </div>
               <Button aria-label="Cerrar" onClick={closeStockDialog} size="icon" type="button" variant="ghost"><X /></Button>
             </div>
-            <form className="mt-5 grid gap-4" onSubmit={submitStockAction}>
+            <form className="mt-5 grid min-w-0 gap-4" onSubmit={submitStockAction}>
               <label className="grid gap-2 text-sm font-semibold text-slate-800">
                 Cantidad
                 <div className="flex h-12 w-fit items-center overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm focus-within:ring-2 focus-within:ring-teal-200">
@@ -4053,8 +4159,8 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
                 </div>
               </label>
               {stockAction === 'remove' ? (
-                <label className="grid gap-2 text-sm font-semibold text-slate-800">Impresora donde se instalo
-                  <select className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" onChange={(event) => setSelectedPrinterId(event.target.value)} required value={selectedPrinterId}>
+                <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-800">Impresora donde se instalo
+                  <select className="box-border h-12 w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100" onChange={(event) => setSelectedPrinterId(event.target.value)} required value={selectedPrinterId}>
                     <option value="">{printersQuery.isLoading ? 'Cargando impresoras...' : 'Selecciona una impresora'}</option>
                     {printersQuery.data?.map((printer) => <option key={printer.id} value={printer.id}>{printer.model} - {printer.area} - {printer.serialNumber}{printer.ip ? ` - ${printer.ip}` : ""}</option>)}
                   </select>
@@ -4064,8 +4170,8 @@ function TonersView({ request }: { request: AuthenticatedRequest }) {
               ) : null}
               {stockError ? <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{stockError}</p> : null}
               <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <Button className="rounded-xl" onClick={closeStockDialog} type="button" variant="outline">Cancelar</Button>
-                <Button className={stockAction === 'add' ? 'rounded-xl bg-gradient-to-r from-emerald-700 to-teal-700 font-semibold shadow-md hover:from-emerald-800 hover:to-teal-800' : 'rounded-xl bg-gradient-to-r from-sky-700 to-blue-800 font-semibold shadow-md hover:from-sky-800 hover:to-blue-900'} disabled={stockMutation.isPending || (stockAction === 'remove' && (!selectedPrinterId || printersQuery.isLoading || !printersQuery.data?.length))} type="submit">
+                <Button className="w-full rounded-xl sm:w-auto" onClick={closeStockDialog} type="button" variant="outline">Cancelar</Button>
+                <Button className={cn('w-full rounded-xl font-semibold shadow-md sm:w-auto', stockAction === 'add' ? 'bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-800 hover:to-teal-800' : 'bg-gradient-to-r from-sky-700 to-blue-800 hover:from-sky-800 hover:to-blue-900')} disabled={stockMutation.isPending || (stockAction === 'remove' && (!selectedPrinterId || printersQuery.isLoading || !printersQuery.data?.length))} type="submit">
                   {stockMutation.isPending ? 'Guardando...' : stockAction === 'add' ? <><Plus /> Agregar al stock</> : <><Printer /> Confirmar instalacion</>}
                 </Button>
               </div>

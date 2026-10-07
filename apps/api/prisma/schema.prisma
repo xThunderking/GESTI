@@ -57,6 +57,7 @@ model User {
   towerIpsCreated          TowerIp[]           @relation("TowerIpCreatedBy")
   towerIpsUpdated          TowerIp[]           @relation("TowerIpUpdatedBy")
   towerIpsDeleted          TowerIp[]           @relation("TowerIpDeletedBy")
+  towerIpAssignments       TowerIpAssignment[]
   haqIpsCreated            HaqIp[]             @relation("HaqIpCreatedBy")
   haqIpsUpdated            HaqIp[]             @relation("HaqIpUpdatedBy")
   haqIpsDeleted            HaqIp[]             @relation("HaqIpDeletedBy")
@@ -112,27 +113,46 @@ model TowerIp {
   id           String    @id @default(uuid()) @db.Uuid
   ip           String    @unique
   office       String
-  location     String
-  responsible  String
+  location     String?
+  responsible  String?
   antenna      Boolean   @default(false)
   observations String?
-  configuredAt DateTime  @default(now())
+  configuredAt DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  configuredById String  @db.Uuid
-  createdById    String  @db.Uuid
-  updatedById    String  @db.Uuid
-  deletedById    String? @db.Uuid
-  configuredBy   User    @relation("TowerIpConfiguredBy", fields: [configuredById], references: [id])
-  createdBy      User    @relation("TowerIpCreatedBy", fields: [createdById], references: [id])
-  updatedBy      User    @relation("TowerIpUpdatedBy", fields: [updatedById], references: [id])
-  deletedBy      User?   @relation("TowerIpDeletedBy", fields: [deletedById], references: [id])
+  configuredById String?             @db.Uuid
+  createdById    String              @db.Uuid
+  updatedById    String              @db.Uuid
+  deletedById    String?             @db.Uuid
+  configuredBy   User?               @relation("TowerIpConfiguredBy", fields: [configuredById], references: [id])
+  createdBy      User                @relation("TowerIpCreatedBy", fields: [createdById], references: [id])
+  updatedBy      User                @relation("TowerIpUpdatedBy", fields: [updatedById], references: [id])
+  deletedBy      User?               @relation("TowerIpDeletedBy", fields: [deletedById], references: [id])
+  assignments    TowerIpAssignment[]
 
   @@index([office])
   @@index([deletedAt])
   @@map("tower_ips")
+}
+
+model TowerIpAssignment {
+  id             String   @id @default(uuid()) @db.Uuid
+  assignmentType String
+  responsible    String
+  location       String
+  antenna        Boolean  @default(false)
+  observations   String?
+  createdAt      DateTime @default(now())
+
+  towerIpId    String  @db.Uuid
+  assignedById String  @db.Uuid
+  towerIp      TowerIp @relation(fields: [towerIpId], references: [id], onDelete: Restrict)
+  assignedBy   User    @relation(fields: [assignedById], references: [id], onDelete: Restrict)
+
+  @@index([towerIpId, createdAt])
+  @@map("tower_ip_assignments")
 }
 
 model HaqIp {

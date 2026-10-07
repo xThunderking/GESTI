@@ -20,6 +20,8 @@ import { AccessTokenGuard } from '../auth/guards/access-token.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { CreateTowerIpDto } from './dto/create-tower-ip.dto';
+import { BulkCreateTowerIpsDto } from './dto/bulk-create-tower-ips.dto';
+import { AssignTowerIpDto } from './dto/assign-tower-ip.dto';
 import { UpdateTowerIpDto } from './dto/update-tower-ip.dto';
 import { TowerIpsService } from './tower-ips.service';
 
@@ -45,6 +47,38 @@ export class TowerIpsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.towerIpsService.create(dto, user.id);
+  }
+
+  @Post('bulk')
+  @ApiOperation({ summary: 'Registrar varias IP para un consultorio' })
+  createMany(
+    @Body(new ValidationPipe({ expectedType: BulkCreateTowerIpsDto, forbidNonWhitelisted: true, transform: true, whitelist: true }))
+    dto: BulkCreateTowerIpsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.towerIpsService.createMany(dto, user.id);
+  }
+
+  @Post(':id/assign')
+  @ApiOperation({ summary: 'Asignar IP a un responsable' })
+  assign(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ValidationPipe({ expectedType: AssignTowerIpDto, forbidNonWhitelisted: true, transform: true, whitelist: true }))
+    dto: AssignTowerIpDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.towerIpsService.assign(id, dto, user.id);
+  }
+
+  @Post(':id/reassign')
+  @ApiOperation({ summary: 'Reasignar IP a otro responsable' })
+  reassign(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ValidationPipe({ expectedType: AssignTowerIpDto, forbidNonWhitelisted: true, transform: true, whitelist: true }))
+    dto: AssignTowerIpDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.towerIpsService.reassign(id, dto, user.id);
   }
 
   @Patch(':id')
